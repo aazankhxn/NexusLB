@@ -1,0 +1,18 @@
+[package]
+name = "nexuslb-engine-io-uring"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Linux io_uring high-performance I/O engine for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-network = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.6"
+libc = "0.2"

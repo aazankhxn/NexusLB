@@ -1,0 +1,16 @@
+[package]
+name = "nexuslb-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Per-core runtime, worker thread management, and CPU affinity for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-network = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

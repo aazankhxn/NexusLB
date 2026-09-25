@@ -1,0 +1,15 @@
+[package]
+name = "nexuslb-health"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Active and passive health checking, circuit breaker, and backend draining for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-metrics = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }

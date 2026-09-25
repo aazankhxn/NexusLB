@@ -1,0 +1,12 @@
+[package]
+name = "nexuslb-metrics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Low-contention per-core metrics and Prometheus exporter for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }

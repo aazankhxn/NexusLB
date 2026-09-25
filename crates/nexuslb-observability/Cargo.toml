@@ -1,0 +1,11 @@
+[package]
+name = "nexuslb-observability"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Structured logging, tracing subscribers, and observability initialization for NexusLB"
+
+[dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

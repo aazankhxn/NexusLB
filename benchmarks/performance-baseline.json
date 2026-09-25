@@ -1,0 +1,48 @@
+{
+  "benchmark_suite_version": "1.0.0",
+  "engine": "tokio",
+  "concurrency_scenarios": [
+    {
+      "name": "high_concurrency_keepalive_1k",
+      "concurrency": 1000,
+      "payload_bytes": 1024,
+      "metrics": {
+        "throughput_req_per_sec": 142500.0,
+        "p50_latency_micros": 420.0,
+        "p95_latency_micros": 1850.0,
+        "p99_latency_micros": 3200.0,
+        "cpu_utilization_pct": 58.2,
+        "memory_rss_mb": 42.6,
+        "error_rate_pct": 0.0
+      }
+    },
+    {
+      "name": "medium_concurrency_keepalive_100",
+      "concurrency": 100,
+      "payload_bytes": 1024,
+      "metrics": {
+        "throughput_req_per_sec": 185000.0,
+        "p50_latency_micros": 180.0,
+        "p95_latency_micros": 650.0,
+        "p99_latency_micros": 1150.0,
+        "cpu_utilization_pct": 46.5,
+        "memory_rss_mb": 28.4,
+        "error_rate_pct": 0.0
+      }
+    },
+    {
+      "name": "single_connection_latency",
+      "concurrency": 1,
+      "payload_bytes": 64,
+      "metrics": {
+        "throughput_req_per_sec": 24500.0,
+        "p50_latency_micros": 38.0,
+        "p95_latency_micros": 75.0,
+        "p99_latency_micros": 110.0,
+        "cpu_utilization_pct": 12.0,
+        "memory_rss_mb": 18.2,
+        "error_rate_pct": 0.0
+      }
+    }
+  ]
+}

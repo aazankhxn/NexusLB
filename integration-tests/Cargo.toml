@@ -1,0 +1,26 @@
+[package]
+name = "nexuslb-integration-tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "End-to-end integration and chaos tests for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-network = { workspace = true }
+nexuslb-scheduler = { workspace = true }
+nexuslb-health = { workspace = true }
+nexuslb-router = { workspace = true }
+nexuslb-proxy = { workspace = true }
+nexuslb-config = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-runtime = { workspace = true }
+nexuslb-api = { workspace = true }
+nexuslb-tls = { workspace = true }
+
+tokio = { workspace = true }
+bytes = { workspace = true }
+rcgen = { workspace = true }
+serde_json = { workspace = true }

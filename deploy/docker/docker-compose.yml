@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  nexuslb:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"   # Proxy traffic
+      - "9090:9090"   # Prometheus metrics
+      - "9091:9091"   # Admin control API
+    volumes:
+      - ../../configs/nexuslb.yaml:/etc/nexuslb/nexuslb.yaml:ro
+    depends_on:
+      - backend-1
+      - backend-2
+    restart: unless-stopped
+
+  backend-1:
+    image: hashicorp/http-echo:0.2.3
+    command: ["-text=response from backend-1", "-listen=:8081"]
+    ports:
+      - "8081:8081"
+
+  backend-2:
+    image: hashicorp/http-echo:0.2.3
+    command: ["-text=response from backend-2", "-listen=:8082"]
+    ports:
+      - "8082:8082"

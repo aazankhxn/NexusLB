@@ -1,0 +1,15 @@
+[package]
+name = "nexuslb-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core types, statistics, and domain models for NexusLB"
+
+[dependencies]
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ahash = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }

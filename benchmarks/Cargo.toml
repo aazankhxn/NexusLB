@@ -1,0 +1,42 @@
+[package]
+name = "nexuslb-benchmarks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Comprehensive benchmarking suite, load generator, and baseline comparator for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-scheduler = { workspace = true }
+nexuslb-router = { workspace = true }
+nexuslb-network = { workspace = true }
+nexuslb-proxy = { workspace = true }
+nexuslb-config = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+
+tokio = { workspace = true }
+criterion = { workspace = true }
+clap = { workspace = true }
+bytes = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[[bench]]
+name = "schedulers"
+harness = false
+
+[[bench]]
+name = "router"
+harness = false
+
+[[bench]]
+name = "buffer_pool"
+harness = false
+
+[[bin]]
+name = "nexuslb-bench"
+path = "src/main.rs"

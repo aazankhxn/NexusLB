@@ -1,0 +1,35 @@
+[package]
+name = "nexuslb-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Command-line interface and main entry point binary for NexusLB"
+
+[[bin]]
+name = "nexuslb"
+path = "src/main.rs"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-config = { workspace = true }
+nexuslb-runtime = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-network = { workspace = true }
+nexuslb-router = { workspace = true }
+nexuslb-proxy = { workspace = true }
+nexuslb-health = { workspace = true }
+nexuslb-api = { workspace = true }
+nexuslb-observability = { workspace = true }
+nexuslb-tls = { workspace = true }
+nexuslb-engine-tokio = { workspace = true }
+nexuslb-engine-io-uring = { workspace = true }
+nexuslb-engine-xdp = { workspace = true }
+
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }

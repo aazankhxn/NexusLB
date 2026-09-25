@@ -1,0 +1,14 @@
+[package]
+name = "nexuslb-scheduler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance load-balancing algorithms and adaptive scheduler for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+rand = { workspace = true }
+ahash = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }

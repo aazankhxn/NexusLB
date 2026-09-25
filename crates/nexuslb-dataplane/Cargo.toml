@@ -1,0 +1,22 @@
+[package]
+name = "nexuslb-dataplane"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance dataplane pipeline and lock-free state engine for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-network = { workspace = true }
+nexuslb-router = { workspace = true }
+nexuslb-scheduler = { workspace = true }
+nexuslb-proxy = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-tls = { workspace = true }
+nexuslb-health = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+arc-swap = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }

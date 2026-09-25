@@ -1,0 +1,14 @@
+[package]
+name = "nexuslb-engine-xdp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Experimental XDP / AF_XDP kernel-bypass engine for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-network = { workspace = true }
+tracing = { workspace = true }

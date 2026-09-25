@@ -1,0 +1,106 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nexuslb-core",
+    "crates/nexuslb-runtime",
+    "crates/nexuslb-dataplane",
+    "crates/nexuslb-network",
+    "crates/nexuslb-proxy",
+    "crates/nexuslb-router",
+    "crates/nexuslb-scheduler",
+    "crates/nexuslb-health",
+    "crates/nexuslb-config",
+    "crates/nexuslb-api",
+    "crates/nexuslb-metrics",
+    "crates/nexuslb-observability",
+    "crates/nexuslb-tls",
+    "crates/nexuslb-cli",
+    "engines/tokio",
+    "engines/io-uring",
+    "engines/xdp",
+    "benchmarks",
+    "integration-tests",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["NexusLB Contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/nexuslb/nexuslb"
+description = "High-performance adaptive load balancing for modern infrastructure."
+
+[workspace.dependencies]
+# NexusLB workspace crates
+nexuslb-core = { path = "crates/nexuslb-core" }
+nexuslb-runtime = { path = "crates/nexuslb-runtime" }
+nexuslb-dataplane = { path = "crates/nexuslb-dataplane" }
+nexuslb-network = { path = "crates/nexuslb-network" }
+nexuslb-proxy = { path = "crates/nexuslb-proxy" }
+nexuslb-router = { path = "crates/nexuslb-router" }
+nexuslb-scheduler = { path = "crates/nexuslb-scheduler" }
+nexuslb-health = { path = "crates/nexuslb-health" }
+nexuslb-config = { path = "crates/nexuslb-config" }
+nexuslb-api = { path = "crates/nexuslb-api" }
+nexuslb-metrics = { path = "crates/nexuslb-metrics" }
+nexuslb-observability = { path = "crates/nexuslb-observability" }
+nexuslb-tls = { path = "crates/nexuslb-tls" }
+nexuslb-cli = { path = "crates/nexuslb-cli" }
+nexuslb-engine-tokio = { path = "engines/tokio" }
+nexuslb-engine-io-uring = { path = "engines/io-uring" }
+nexuslb-engine-xdp = { path = "engines/xdp" }
+
+# Async & Networking
+tokio = { version = "1.40", features = ["full"] }
+bytes = "1.7"
+socket2 = { version = "0.5", features = ["all"] }
+httparse = "1.9"
+http = "1.1"
+http-body-util = "0.1"
+hyper = { version = "1.4", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+h2 = "0.4"
+
+# TLS & Cryptography
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = "0.26"
+rustls-pki-types = "1.8"
+rustls-pemfile = "2.1"
+rcgen = "0.13"
+
+# Concurrency & Lock-Free Data Structures
+arc-swap = "1.7"
+parking_lot = "0.12"
+crossbeam = "0.8"
+ahash = "0.8"
+rand = "0.8"
+
+# Serialization & Config
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+
+# CLI & Tracing
+clap = { version = "4.5", features = ["derive", "cargo"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error Handling & Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+debug = true

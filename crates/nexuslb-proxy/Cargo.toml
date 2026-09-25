@@ -1,0 +1,23 @@
+[package]
+name = "nexuslb-proxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "L4/L7 proxy engines, HTTP/1.1, HTTP/2, WebSocket, retries, and rate limiting for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-network = { workspace = true }
+nexuslb-router = { workspace = true }
+nexuslb-health = { workspace = true }
+nexuslb-metrics = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+httparse = { workspace = true }
+http = { workspace = true }
+tracing = { workspace = true }
+arc-swap = { workspace = true }
+parking_lot = { workspace = true }
+ahash = { workspace = true }
+thiserror = { workspace = true }

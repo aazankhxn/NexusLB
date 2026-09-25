@@ -1,0 +1,53 @@
+# Default configuration for NexusLB
+server:
+  listen:
+    - "0.0.0.0:8080"
+  workers: auto
+  engine: auto
+  reuse_port: true
+  tcp_nodelay: true
+
+load_balancer:
+  algorithm: adaptive
+  default_pool: default
+
+backends:
+  - name: local-backend-1
+    address: "127.0.0.1:9001"
+    weight: 100
+    protocol: http1
+    pool: default
+
+  - name: local-backend-2
+    address: "127.0.0.1:9002"
+    weight: 100
+    protocol: http1
+    pool: default
+
+health_check:
+  enabled: true
+  interval: 5s
+  timeout: 1s
+  healthy_threshold: 2
+  unhealthy_threshold: 3
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  success_threshold: 3
+  cool_down: 10s
+
+tls:
+  enabled: false
+
+metrics:
+  enabled: true
+  address: "0.0.0.0:9090"
+
+admin:
+  enabled: true
+  address: "127.0.0.1:9091"
+  token: null
+
+rate_limit:
+  enabled: false

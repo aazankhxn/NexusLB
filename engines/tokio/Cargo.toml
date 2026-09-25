@@ -1,0 +1,17 @@
+[package]
+name = "nexuslb-engine-tokio"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Tokio-based asynchronous I/O engine for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+nexuslb-runtime = { workspace = true }
+nexuslb-dataplane = { workspace = true }
+nexuslb-metrics = { workspace = true }
+nexuslb-network = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }

@@ -1,0 +1,82 @@
+# NexusLB Production Configuration Example
+server:
+  listen:
+    - "0.0.0.0:8080"
+  workers: auto
+  engine: auto
+  reuse_port: true
+  tcp_nodelay: true
+  max_connections: 500000
+
+load_balancer:
+  algorithm: adaptive
+  default_pool: api-pool
+
+backends:
+  - name: api-1
+    address: "127.0.0.1:8081"
+    weight: 100
+    protocol: http1
+    pool: api-pool
+
+  - name: api-2
+    address: "127.0.0.1:8082"
+    weight: 100
+    protocol: http1
+    pool: api-pool
+
+  - name: static-1
+    address: "127.0.0.1:8083"
+    weight: 50
+    protocol: http1
+    pool: static-pool
+
+routes:
+  - name: api-route
+    host: null
+    path: "/api/*"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+    pool: api-pool
+    priority: 100
+
+  - name: static-route
+    host: null
+    path: "/static/*"
+    pool: static-pool
+    priority: 50
+
+health_check:
+  enabled: true
+  interval: 5s
+  timeout: 1s
+  healthy_threshold: 2
+  unhealthy_threshold: 3
+  http_path: "/health"
+  expected_status: 200
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  success_threshold: 3
+  cool_down: 10s
+
+tls:
+  enabled: false
+
+metrics:
+  enabled: true
+  address: "0.0.0.0:9090"
+
+admin:
+  enabled: true
+  address: "127.0.0.1:9091"
+  token: null
+
+rate_limit:
+  enabled: true
+  global_rps: 100000
+  client_rps: 5000

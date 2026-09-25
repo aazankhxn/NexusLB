@@ -377,6 +377,27 @@ async fn start_nexuslb(
         });
     }
 
+    // 5b. Start Prometheus metrics server
+    if cfg.metrics.enabled {
+        let metrics_addr: SocketAddr = cfg.metrics.address.parse()?;
+        let metrics_ref = metrics.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            if let Ok(listener) = tokio::net::TcpListener::bind(metrics_addr).await {
+                info!(address = %metrics_addr, "Prometheus metrics exporter listening");
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    let text = metrics_ref.render_prometheus();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        text.len(),
+                        text
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                }
+            }
+        });
+    }
+
     // 6. Listen addresses & socket config
     let mut listeners = Vec::new();
     for l in &cfg.server.listen {

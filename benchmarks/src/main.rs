@@ -141,8 +141,8 @@ async fn run_benchmark(
                     continue;
                 }
 
-                match s.read(&mut buf).await {
-                    Ok(n) if n > 0 => {
+                match tokio::time::timeout(Duration::from_millis(500), s.read(&mut buf)).await {
+                    Ok(Ok(n)) if n > 0 => {
                         total_requests.fetch_add(1, Ordering::Relaxed);
                         total_bytes.fetch_add(n as u64, Ordering::Relaxed);
                     }

@@ -91,9 +91,17 @@ impl Scheduler for AdaptiveScheduler {
             }
 
             let score = self.calculate_score(b);
-            if score < min_score {
+            if score < min_score - 1e-6 {
                 min_score = score;
                 best = Some(b);
+            } else if (score - min_score).abs() <= 1e-6 {
+                if let Some(prev) = best {
+                    if b.stats().snapshot().total_requests < prev.stats().snapshot().total_requests
+                    {
+                        min_score = score;
+                        best = Some(b);
+                    }
+                }
             }
         }
 

@@ -137,7 +137,7 @@ impl ConnectionPool {
         let mut buf = [0u8; 1];
         match stream.try_read(&mut buf) {
             Ok(0) => false, // EOF / remote closed
-            Ok(_) => true,  // Unread data (unexpected for idle conn, but alive)
+            Ok(_) => false, // Unexpected unread data on idle connection (poisoned/desynced) -> drop
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => true, // Still alive and clean
             Err(_) => false,
         }

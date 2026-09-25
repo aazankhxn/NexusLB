@@ -31,11 +31,13 @@ impl BufferPool {
     }
 
     pub fn acquire(&self) -> PooledBuffer {
-        let buffer = self
+        let mut buffer = self
             .inner
             .queue
             .pop()
             .unwrap_or_else(|| vec![0u8; self.inner.buffer_size]);
+
+        buffer.resize(self.inner.buffer_size, 0);
 
         PooledBuffer {
             pool: Some(self.clone()),

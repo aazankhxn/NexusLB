@@ -13,6 +13,7 @@ use nexuslb_scheduler::traits::SelectionContext;
 pub enum DetectedProtocol {
     Tls,
     Http,
+    Http2,
     RawTcp,
 }
 
@@ -48,6 +49,9 @@ impl DataplanePipeline {
             DetectedProtocol::Http => {
                 Self::handle_http(client, client_addr, &current_state, metrics, false).await;
             }
+            DetectedProtocol::Http2 => {
+                Self::handle_http2(client, client_addr, &current_state, metrics).await;
+            }
             DetectedProtocol::RawTcp => {
                 Self::handle_tcp(client, client_addr, &current_state, metrics).await;
             }
@@ -77,8 +81,12 @@ impl DataplanePipeline {
             return DetectedProtocol::Tls;
         }
 
+        if peek.starts_with(b"PRI * HTTP/2.0") {
+            return DetectedProtocol::Http2;
+        }
+
         let http_prefixes = [
-            b"GET ", b"POST", b"HEAD", b"PUT ", b"DELE", b"OPTI", b"PATC", b"CONN", b"PRI ",
+            b"GET ", b"POST", b"HEAD", b"PUT ", b"DELE", b"OPTI", b"PATC", b"CONN",
         ];
 
         for prefix in &http_prefixes {
@@ -135,8 +143,42 @@ impl DataplanePipeline {
             state.buffer_pool.clone(),
             state.retry_policy.clone(),
             is_tls,
+            state.http_cache.clone(),
         )
         .await;
+    }
+
+    async fn handle_http2(
+        client: TcpStream,
+        client_addr: SocketAddr,
+        state: &crate::state::DataplaneState,
+        metrics: Arc<WorkerMetrics>,
+    ) {
+        let pool = state
+            .router
+            .default_pool()
+            .or_else(|| state.router.pools().values().next());
+
+        let pool = match pool {
+            Some(p) => p,
+            None => {
+                warn!("No backend pool configured in router for HTTP/2");
+                return;
+            }
+        };
+
+        let ctx = SelectionContext::with_ip(client_addr.ip());
+        let backend = match pool.select(&ctx) {
+            Some(b) => b,
+            None => {
+                metrics.inc_backend_errors();
+                return;
+            }
+        };
+
+        metrics.inc_backend_requests();
+        let _ =
+            nexuslb_proxy::H2Proxy::handle_connection(client, client_addr, backend, metrics).await;
     }
 
     async fn handle_tcp(

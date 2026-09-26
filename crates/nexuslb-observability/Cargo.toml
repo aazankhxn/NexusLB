@@ -9,3 +9,5 @@ description = "Structured logging, tracing subscribers, and observability initia
 [dependencies]
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }

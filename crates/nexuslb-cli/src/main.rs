@@ -73,6 +73,11 @@ enum Commands {
         #[command(subcommand)]
         bench_command: BenchCommands,
     },
+    /// Launch interactive real-time terminal dashboard (TUI)
+    Top {
+        #[arg(short, long, default_value = "http://127.0.0.1:9091")]
+        admin_url: String,
+    },
     /// Print version and compilation information
     Version,
 }
@@ -128,6 +133,14 @@ async fn main() -> anyhow::Result<()> {
                 Ok(resp) => println!("Active Backends:\n{}", resp),
                 Err(e) => eprintln!("Failed to retrieve status: {}", e),
             }
+        }
+        Commands::Top { admin_url } => {
+            let url = if !admin_url.starts_with("http://") && !admin_url.starts_with("https://") {
+                format!("http://{}", admin_url)
+            } else {
+                admin_url
+            };
+            nexuslb_tui::run_dashboard(url).await?;
         }
         Commands::Start {
             config,
@@ -308,6 +321,7 @@ async fn start_nexuslb(
     let conn_pool = ConnectionPool::new(ConnectionPoolConfig::default());
     let buffer_pool = BufferPool::default();
     let retry_policy = RetryPolicy::default();
+    let http_cache = Arc::new(nexuslb_cache::HttpCache::default());
 
     let shared_state = Arc::new(SharedDataplaneState::new(DataplaneState {
         router,
@@ -316,6 +330,7 @@ async fn start_nexuslb(
         buffer_pool,
         retry_policy,
         tls_acceptor: None,
+        http_cache,
     }));
 
     // 3. Worker metrics

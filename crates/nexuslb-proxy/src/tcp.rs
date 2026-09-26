@@ -6,11 +6,58 @@ use tracing::{debug, trace};
 
 use nexuslb_core::backend::Backend;
 use nexuslb_metrics::WorkerMetrics;
-use nexuslb_network::BufferPool;
+use nexuslb_network::{BufferPool, SpliceEngine};
 
 pub struct TcpProxy;
 
 impl TcpProxy {
+    pub async fn forward_splice(
+        mut client: TcpStream,
+        mut upstream: TcpStream,
+        backend: Arc<Backend>,
+        metrics: Arc<WorkerMetrics>,
+        splice_engine: &SpliceEngine,
+    ) -> std::io::Result<()> {
+        let start = Instant::now();
+        backend.stats().inc_active_connections();
+        metrics.inc_connections();
+
+        let res = splice_engine
+            .splice_bidirectional(&mut client, &mut upstream)
+            .await;
+
+        backend.stats().dec_active_connections();
+        metrics.dec_connections();
+
+        match res {
+            Ok(stats) => {
+                let duration = start.elapsed();
+                backend.stats().record_success(
+                    duration,
+                    stats.bytes_client_to_backend,
+                    stats.bytes_backend_to_client,
+                );
+                metrics.record_latency(duration);
+                metrics.add_bytes_received(stats.bytes_client_to_backend);
+                metrics.add_bytes_sent(stats.bytes_backend_to_client);
+                trace!(
+                    backend = %backend.name(),
+                    bytes_in = stats.bytes_client_to_backend,
+                    bytes_out = stats.bytes_backend_to_client,
+                    zero_copy = stats.zero_copy_used,
+                    duration_ms = duration.as_millis(),
+                    "TCP splice proxy session completed cleanly"
+                );
+                Ok(())
+            }
+            Err(e) => {
+                backend.stats().record_error();
+                metrics.inc_backend_errors();
+                debug!(backend = %backend.name(), error = %e, "TCP splice proxy session ended with error");
+                Err(e)
+            }
+        }
+    }
     pub async fn forward(
         mut client: TcpStream,
         mut upstream: TcpStream,

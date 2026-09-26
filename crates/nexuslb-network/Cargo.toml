@@ -16,3 +16,4 @@ crossbeam = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
+libc = { workspace = true }

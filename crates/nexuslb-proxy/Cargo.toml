@@ -12,12 +12,17 @@ nexuslb-network = { workspace = true }
 nexuslb-router = { workspace = true }
 nexuslb-health = { workspace = true }
 nexuslb-metrics = { workspace = true }
+nexuslb-observability = { workspace = true }
+nexuslb-cache = { workspace = true }
 tokio = { workspace = true }
 bytes = { workspace = true }
 httparse = { workspace = true }
 http = { workspace = true }
+h2 = { workspace = true }
 tracing = { workspace = true }
 arc-swap = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }

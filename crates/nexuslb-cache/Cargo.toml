@@ -1,0 +1,15 @@
+[package]
+name = "nexuslb-cache"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance RFC 7234 HTTP in-memory caching engine for NexusLB"
+
+[dependencies]
+nexuslb-core = { workspace = true }
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+ahash = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

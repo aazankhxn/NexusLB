@@ -1,3 +1,9 @@
+pub mod span;
+pub mod trace_context;
+
+pub use span::{ProxySpan, SpanReport};
+pub use trace_context::TraceContext;
+
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 pub fn init_observability(log_level: &str, json_format: bool) {
@@ -9,13 +15,13 @@ pub fn init_observability(log_level: &str, json_format: bool) {
             .with_target(false)
             .with_filter(filter);
 
-        tracing_subscriber::registry().with(fmt_layer).init();
+        let _ = tracing_subscriber::registry().with(fmt_layer).try_init();
     } else {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_target(false)
             .with_thread_ids(true)
             .with_filter(filter);
 
-        tracing_subscriber::registry().with(fmt_layer).init();
+        let _ = tracing_subscriber::registry().with(fmt_layer).try_init();
     }
 }

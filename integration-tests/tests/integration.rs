@@ -56,6 +56,7 @@ async fn test_http_proxy_and_load_distribution() {
         buffer_pool,
         retry_policy,
         tls_acceptor: None,
+        http_cache: Arc::new(nexuslb_cache::HttpCache::default()),
     }));
 
     let metrics = Arc::new(WorkerMetrics::new(0));
@@ -149,6 +150,7 @@ async fn test_failover_when_backend_goes_down() {
         buffer_pool,
         retry_policy,
         tls_acceptor: None,
+        http_cache: Arc::new(nexuslb_cache::HttpCache::default()),
     }));
 
     let metrics = Arc::new(WorkerMetrics::new(0));

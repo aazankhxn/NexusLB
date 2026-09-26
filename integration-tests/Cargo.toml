@@ -19,6 +19,7 @@ nexuslb-metrics = { workspace = true }
 nexuslb-runtime = { workspace = true }
 nexuslb-api = { workspace = true }
 nexuslb-tls = { workspace = true }
+nexuslb-cache = { workspace = true }
 
 tokio = { workspace = true }
 bytes = { workspace = true }

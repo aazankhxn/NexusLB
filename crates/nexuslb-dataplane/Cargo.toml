@@ -15,6 +15,7 @@ nexuslb-proxy = { workspace = true }
 nexuslb-metrics = { workspace = true }
 nexuslb-tls = { workspace = true }
 nexuslb-health = { workspace = true }
+nexuslb-cache = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 arc-swap = { workspace = true }

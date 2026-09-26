@@ -10,10 +10,14 @@ members = [
     "crates/nexuslb-scheduler",
     "crates/nexuslb-health",
     "crates/nexuslb-config",
+    "crates/nexuslb-cache",
+    "crates/nexuslb-discovery",
     "crates/nexuslb-api",
     "crates/nexuslb-metrics",
     "crates/nexuslb-observability",
     "crates/nexuslb-tls",
+    "crates/nexuslb-wasm",
+    "crates/nexuslb-tui",
     "crates/nexuslb-cli",
     "engines/tokio",
     "engines/io-uring",
@@ -41,10 +45,14 @@ nexuslb-router = { path = "crates/nexuslb-router" }
 nexuslb-scheduler = { path = "crates/nexuslb-scheduler" }
 nexuslb-health = { path = "crates/nexuslb-health" }
 nexuslb-config = { path = "crates/nexuslb-config" }
+nexuslb-cache = { path = "crates/nexuslb-cache" }
+nexuslb-discovery = { path = "crates/nexuslb-discovery" }
 nexuslb-api = { path = "crates/nexuslb-api" }
 nexuslb-metrics = { path = "crates/nexuslb-metrics" }
 nexuslb-observability = { path = "crates/nexuslb-observability" }
 nexuslb-tls = { path = "crates/nexuslb-tls" }
+nexuslb-wasm = { path = "crates/nexuslb-wasm" }
+nexuslb-tui = { path = "crates/nexuslb-tui" }
 nexuslb-cli = { path = "crates/nexuslb-cli" }
 nexuslb-engine-tokio = { path = "engines/tokio" }
 nexuslb-engine-io-uring = { path = "engines/io-uring" }
@@ -80,8 +88,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
 
-# CLI & Tracing
+# CLI, TUI & Tracing
 clap = { version = "4.5", features = ["derive", "cargo"] }
+ratatui = "0.28"
+crossterm = "0.28"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
@@ -89,6 +100,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
+libc = "0.2"
 
 # Benchmarking
 criterion = { version = "0.5", features = ["async_tokio"] }

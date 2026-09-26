@@ -15,6 +15,7 @@ pub struct DataplaneState {
     pub buffer_pool: BufferPool,
     pub retry_policy: RetryPolicy,
     pub tls_acceptor: Option<TlsAcceptor>,
+    pub http_cache: Arc<nexuslb_cache::HttpCache>,
 }
 
 /// Thread-safe lock-free holder for atomic zero-downtime reconfiguration

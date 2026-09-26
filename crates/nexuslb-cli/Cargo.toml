@@ -20,9 +20,11 @@ nexuslb-network = { workspace = true }
 nexuslb-router = { workspace = true }
 nexuslb-proxy = { workspace = true }
 nexuslb-health = { workspace = true }
+nexuslb-cache = { workspace = true }
 nexuslb-api = { workspace = true }
 nexuslb-observability = { workspace = true }
 nexuslb-tls = { workspace = true }
+nexuslb-tui = { workspace = true }
 nexuslb-engine-tokio = { workspace = true }
 nexuslb-engine-io-uring = { workspace = true }
 nexuslb-engine-xdp = { workspace = true }

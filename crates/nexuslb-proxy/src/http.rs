@@ -25,13 +25,21 @@ impl HttpProxy {
         buffer_pool: BufferPool,
         _retry_policy: RetryPolicy,
         is_tls: bool,
+        cache: Arc<nexuslb_cache::HttpCache>,
     ) -> std::io::Result<()> {
         let mut read_buf = buffer_pool.acquire();
         let mut total_read = 0;
 
         loop {
-            // Read and parse an HTTP request header
-            let (header_len, method, path, is_websocket, client_close, content_length) = loop {
+            let (
+                header_len,
+                method,
+                path,
+                is_websocket,
+                client_close,
+                content_length,
+                incoming_traceparent,
+            ) = loop {
                 let mut headers = [httparse::EMPTY_HEADER; 64];
                 let mut req = httparse::Request::new(&mut headers);
 
@@ -43,6 +51,8 @@ impl HttpProxy {
                         let mut is_ws = false;
                         let mut cl = None;
                         let mut close = false;
+
+                        let mut incoming_tp = None;
 
                         for h in req.headers.iter() {
                             if h.name.eq_ignore_ascii_case("upgrade")
@@ -60,8 +70,13 @@ impl HttpProxy {
                                     cl = s.trim().parse::<usize>().ok();
                                 }
                             }
+                            if h.name.eq_ignore_ascii_case("traceparent") {
+                                if let Ok(s) = std::str::from_utf8(h.value) {
+                                    incoming_tp = Some(s.to_string());
+                                }
+                            }
                         }
-                        break (hlen, method, path, is_ws, close, cl);
+                        break (hlen, method, path, is_ws, close, cl, incoming_tp);
                     }
                     Ok(httparse::Status::Partial) => {
                         if total_read == read_buf.len() {
@@ -85,6 +100,7 @@ impl HttpProxy {
                 }
             };
 
+            let span = nexuslb_observability::ProxySpan::new(incoming_traceparent.as_deref());
             let body_len = content_length.unwrap_or(0);
             let req_total_len = header_len + body_len;
 
@@ -107,7 +123,7 @@ impl HttpProxy {
             }
 
             // Build forwarded request
-            let mut req_bytes = Vec::with_capacity(header_len + 256 + body_len);
+            let mut req_bytes = Vec::with_capacity(header_len + 384 + body_len);
             req_bytes.extend_from_slice(format!("{} {} HTTP/1.1\r\n", method, path).as_bytes());
 
             // Re-parse headers to accurately reconstruct
@@ -115,9 +131,82 @@ impl HttpProxy {
             let mut req = httparse::Request::new(&mut headers);
             let _ = req.parse(&read_buf[..header_len]);
 
+            let host_hdr = req
+                .headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case("host"))
+                .and_then(|h| std::str::from_utf8(h.value).ok())
+                .unwrap_or("localhost");
+
+            let if_none_match = req
+                .headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case("if-none-match"))
+                .and_then(|h| std::str::from_utf8(h.value).ok());
+
+            match cache.get(&method, host_hdr, &path, if_none_match) {
+                nexuslb_cache::CacheResult::Hit(cached) => {
+                    let mut resp_str = format!(
+                        "HTTP/1.1 {} OK\r\nAge: {}\r\nX-Cache: HIT\r\nContent-Length: {}\r\n",
+                        cached.status,
+                        cached.age_secs(),
+                        cached.body.len()
+                    );
+                    if let Some(ref tag) = cached.etag {
+                        resp_str.push_str(&format!("ETag: {}\r\n", tag));
+                    }
+                    for (k, v) in &cached.headers {
+                        if !k.eq_ignore_ascii_case("content-length")
+                            && !k.eq_ignore_ascii_case("age")
+                            && !k.eq_ignore_ascii_case("etag")
+                        {
+                            resp_str.push_str(&format!("{}: {}\r\n", k, v));
+                        }
+                    }
+                    resp_str.push_str("\r\n");
+                    client.write_all(resp_str.as_bytes()).await?;
+                    client.write_all(&cached.body).await?;
+                    metrics.inc_requests();
+
+                    let leftover = total_read.saturating_sub(req_total_len);
+                    if leftover > 0 {
+                        read_buf.copy_within(req_total_len..total_read, 0);
+                    }
+                    total_read = leftover;
+
+                    if client_close {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                nexuslb_cache::CacheResult::NotModified(etag) => {
+                    let mut resp_str =
+                        "HTTP/1.1 304 Not Modified\r\nX-Cache: HIT-REVALIDATED\r\n".to_string();
+                    if let Some(ref tag) = etag {
+                        resp_str.push_str(&format!("ETag: {}\r\n", tag));
+                    }
+                    resp_str.push_str("\r\n");
+                    client.write_all(resp_str.as_bytes()).await?;
+                    metrics.inc_requests();
+
+                    let leftover = total_read.saturating_sub(req_total_len);
+                    if leftover > 0 {
+                        read_buf.copy_within(req_total_len..total_read, 0);
+                    }
+                    total_read = leftover;
+
+                    if client_close {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                nexuslb_cache::CacheResult::Miss => {}
+            }
+
             for h in req.headers.iter() {
                 if !h.name.eq_ignore_ascii_case("x-forwarded-for")
                     && !h.name.eq_ignore_ascii_case("x-forwarded-proto")
+                    && !h.name.eq_ignore_ascii_case("traceparent")
                 {
                     req_bytes.extend_from_slice(h.name.as_bytes());
                     req_bytes.extend_from_slice(b": ");
@@ -129,8 +218,14 @@ impl HttpProxy {
             let proto_str = if is_tls { "https" } else { "http" };
             req_bytes
                 .extend_from_slice(format!("X-Forwarded-For: {}\r\n", client_addr.ip()).as_bytes());
-            req_bytes
-                .extend_from_slice(format!("X-Forwarded-Proto: {}\r\n\r\n", proto_str).as_bytes());
+            req_bytes.extend_from_slice(format!("X-Forwarded-Proto: {}\r\n", proto_str).as_bytes());
+            req_bytes.extend_from_slice(
+                format!(
+                    "traceparent: {}\r\n\r\n",
+                    span.trace_context.to_header_value()
+                )
+                .as_bytes(),
+            );
 
             if body_len > 0 {
                 req_bytes.extend_from_slice(&read_buf[header_len..req_total_len]);

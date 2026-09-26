@@ -247,3 +247,33 @@ fn test_factory_creates_all_ten_algorithms() {
         assert_eq!(s.algorithm(), t);
     }
 }
+
+#[test]
+fn test_adaptive_scheduler_large_pool_sampled_p2c() {
+    // 100 backends to trigger Sampled P2C O(1) path
+    let mut backends = Vec::new();
+    for i in 1..=100 {
+        let b = make_backend(i, &format!("backend-{}", i), 100);
+        // Make odd nodes healthy, even nodes degraded
+        if i % 2 == 0 {
+            for _ in 0..50 {
+                b.stats().inc_active_connections();
+            }
+            b.stats().record_success(Duration::from_millis(200), 100, 100);
+            b.stats().record_error();
+        } else {
+            b.stats().record_success(Duration::from_millis(5), 100, 100);
+        }
+        backends.push(b);
+    }
+
+    let adaptive = AdaptiveScheduler::new();
+    let ctx = SelectionContext::default();
+
+    // Perform 50 selections and ensure all return valid healthy backends without panicking
+    for _ in 0..50 {
+        let selected = adaptive.select(&backends, &ctx).expect("Must select a backend");
+        assert!(selected.is_available());
+    }
+}
+

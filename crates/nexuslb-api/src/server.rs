@@ -11,9 +11,22 @@ use nexuslb_metrics::GlobalMetrics;
 
 pub type ReloadHandler = Arc<dyn Fn() -> Result<String, String> + Send + Sync>;
 
+/// Constant-time byte comparison to eliminate side-channel timing attacks.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 pub struct AdminServer {
     addr: SocketAddr,
     token: Option<String>,
+    mutation_token: Option<String>,
     metrics: Arc<GlobalMetrics>,
     state: Arc<SharedDataplaneState>,
     config: Arc<NexusConfig>,
@@ -28,9 +41,11 @@ impl AdminServer {
         state: Arc<SharedDataplaneState>,
         config: Arc<NexusConfig>,
     ) -> Self {
+        let mutation_token = config.admin.mutation_token.clone();
         Self {
             addr,
             token,
+            mutation_token,
             metrics,
             state,
             config,
@@ -45,11 +60,12 @@ impl AdminServer {
 
     pub async fn run(self) -> std::io::Result<()> {
         let listener = TcpListener::bind(self.addr).await?;
-        info!(address = %self.addr, "Admin API listening");
+        info!(address = %self.addr, "Admin API listening with secure authentication");
 
         let metrics = self.metrics.clone();
         let state = self.state.clone();
         let token = self.token.clone();
+        let mutation_token = self.mutation_token.clone();
         let config = self.config.clone();
         let reload_handler = self.reload_handler.clone();
 
@@ -58,6 +74,7 @@ impl AdminServer {
             let metrics = metrics.clone();
             let state = state.clone();
             let token = token.clone();
+            let mutation_token = mutation_token.clone();
             let config = config.clone();
             let reload_handler = reload_handler.clone();
 
@@ -68,6 +85,7 @@ impl AdminServer {
                     metrics,
                     state,
                     token,
+                    mutation_token,
                     config,
                     reload_handler,
                 )
@@ -79,12 +97,28 @@ impl AdminServer {
         }
     }
 
+    fn extract_bearer_token<'a>(headers: &'a [httparse::Header<'a>]) -> Option<&'a str> {
+        for h in headers {
+            if h.name.eq_ignore_ascii_case("authorization") {
+                if let Ok(val) = std::str::from_utf8(h.value) {
+                    let trimmed = val.trim();
+                    if trimmed.starts_with("Bearer ") || trimmed.starts_with("bearer ") {
+                        return Some(trimmed[7..].trim());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn handle_client(
         mut stream: TcpStream,
         _client_addr: SocketAddr,
         metrics: Arc<GlobalMetrics>,
         state: Arc<SharedDataplaneState>,
         expected_token: Option<String>,
+        mutation_token: Option<String>,
         config: Arc<NexusConfig>,
         reload_handler: Option<ReloadHandler>,
     ) -> std::io::Result<()> {
@@ -102,22 +136,47 @@ impl AdminServer {
                 let method = req.method.unwrap_or("GET");
                 let path = req.path.unwrap_or("/");
 
-                // Check authorization if token is configured
-                if let Some(ref required_token) = expected_token {
-                    let authorized = req.headers.iter().any(|h| {
-                        if h.name.eq_ignore_ascii_case("authorization") {
-                            let val = String::from_utf8_lossy(h.value);
-                            val.trim() == format!("Bearer {}", required_token)
-                        } else {
-                            false
-                        }
-                    });
+                let is_mutation = method.eq_ignore_ascii_case("POST")
+                    || method.eq_ignore_ascii_case("PUT")
+                    || method.eq_ignore_ascii_case("DELETE");
 
-                    if !authorized {
-                        let resp =
-                            "HTTP/1.1 401 Unauthorized\r\nContent-Length: 13\r\n\r\nUnauthorized\n";
-                        stream.write_all(resp.as_bytes()).await?;
-                        return Ok(());
+                let is_health_probe = (path == "/health" || path == "/ready")
+                    && config.admin.authentication.allow_unauthenticated_health;
+
+                // Check authorization when required
+                if !is_health_probe && config.admin.authentication.required {
+                    let provided_token = Self::extract_bearer_token(req.headers);
+
+                    match provided_token {
+                        None => {
+                            let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Authorization header required\"}\n";
+                            stream.write_all(resp.as_bytes()).await?;
+                            return Ok(());
+                        }
+                        Some(token_str) => {
+                            let target_expected = if is_mutation {
+                                mutation_token.as_ref().or(expected_token.as_ref())
+                            } else {
+                                expected_token.as_ref().or(mutation_token.as_ref())
+                            };
+
+                            let authorized = match target_expected {
+                                Some(expected) => {
+                                    constant_time_eq(token_str.as_bytes(), expected.as_bytes())
+                                }
+                                None => false,
+                            };
+
+                            if !authorized {
+                                let resp = if is_mutation {
+                                    "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Insufficient mutation privileges\"}\n"
+                                } else {
+                                    "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 31\r\n\r\n{\"error\":\"Invalid admin token\"}\n"
+                                };
+                                stream.write_all(resp.as_bytes()).await?;
+                                return Ok(());
+                            }
+                        }
                     }
                 }
 
@@ -235,7 +294,9 @@ impl AdminServer {
                 }
             }
             ("GET", "/config") => {
-                let json = serde_json::to_string_pretty(&*config).unwrap_or_default();
+                // Redact sensitive secrets (JWT secrets, private keys, admin tokens)
+                let redacted = config.to_redacted();
+                let json = serde_json::to_string_pretty(&redacted).unwrap_or_default();
                 ("200 OK", "application/json", json)
             }
             ("POST", "/reload") => {
@@ -277,5 +338,17 @@ impl AdminServer {
 
         stream.write_all(response.as_bytes()).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"my-secret-token", b"my-secret-token"));
+        assert!(!constant_time_eq(b"my-secret-token", b"wrong-token-abc"));
+        assert!(!constant_time_eq(b"short", b"longer-token"));
     }
 }

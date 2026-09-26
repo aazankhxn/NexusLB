@@ -170,7 +170,7 @@ impl DataplanePipeline {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Handle HTTP/1.1 or HTTP/2 client stream with strict authoritative parsing.
     #[allow(clippy::too_many_arguments)]
     async fn handle_http<S>(
         mut client: S,

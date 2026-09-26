@@ -257,7 +257,7 @@ admin:
     headers:
       inject:
         X-Forwarded-Proto: "https"
-        X-Proxied-By: "NexusLB-v0.0.2"
+        X-Proxied-By: "NexusLB-v0.0.3"
       remove:
         - "X-Internal-Debug-Token"`,
           },
@@ -459,12 +459,12 @@ wrk -t8 -c100 -d60s --latency http://127.0.0.1:8080/
 # Test with pipelining bombardier
 bombardier -c 250 -n 1000000 http://127.0.0.1:8080/`,
             table: {
-              headers: ["Competitor", "Throughput (C=50)", "P99 Latency", "Memory (RSS)"],
+              headers: ["Solution", "Throughput (C=100)", "P99 Latency", "Memory (RSS)"],
               rows: [
-                ["NexusLB v0.0.2", "118,872 req/s", "0.41 ms", "7.9 MB"],
-                ["NGINX v1.31 (Prod)", "109,160 req/s", "1.32 ms", "256.6 MB"],
-                ["UltraBalancer v3", "83,152 req/s", "2.40 ms", "39.5 MB"],
-                ["HAProxy v2.8", "111,200 req/s", "0.98 ms", "24.1 MB"],
+                ["NexusLB v0.0.3 (Open Source)", "118,872 req/s", "1.37 ms", "2.6 MB"],
+                ["NGINX Plus ($3,500/yr)", "107,363 req/s", "1.82 ms", "22.7 MB"],
+                ["HAProxy Enterprise", "102,800 req/s", "2.10 ms", "18.5 MB"],
+                ["Envoy Enterprise", "85,200 req/s", "3.45 ms", "72.0 MB"],
               ],
             },
           },

@@ -1,6 +1,7 @@
 use crate::traits::{Scheduler, SelectionContext};
 use nexuslb_core::backend::Backend;
 use nexuslb_core::types::{AlgorithmType, BackendState, CircuitState};
+use rand::Rng;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -82,10 +83,51 @@ impl Default for AdaptiveScheduler {
 
 impl Scheduler for AdaptiveScheduler {
     fn select(&self, backends: &[Arc<Backend>], _ctx: &SelectionContext) -> Option<Arc<Backend>> {
+        if backends.is_empty() {
+            return None;
+        }
+
+        // For small clusters (<= 16 backends), exhaustive scan has negligible overhead
+        // and guarantees globally optimal candidate selection.
+        if backends.len() <= 16 {
+            let mut min_score = f64::MAX;
+            let mut best: Option<&Arc<Backend>> = None;
+
+            for b in backends {
+                if !b.is_available() {
+                    continue;
+                }
+
+                let score = self.calculate_score(b);
+                if score < min_score - 1e-6 {
+                    min_score = score;
+                    best = Some(b);
+                } else if (score - min_score).abs() <= 1e-6 {
+                    if let Some(prev) = best {
+                        if b.stats().total_requests() < prev.stats().total_requests() {
+                            min_score = score;
+                            best = Some(b);
+                        }
+                    }
+                }
+            }
+
+            return best.cloned();
+        }
+
+        // For large clusters (> 16 backends), full O(N) scan causes CPU contention.
+        // We use Power-of-K Choices (P2C / Sampled Candidates, K=4) with zero allocation
+        // to achieve O(1) selection with near-optimal load distribution.
+        let mut rng = rand::thread_rng();
         let mut min_score = f64::MAX;
         let mut best: Option<&Arc<Backend>> = None;
+        let mut sampled_count = 0;
+        let max_samples = 4.min(backends.len());
+        let max_attempts = max_samples * 3; // Guard against sampling downed nodes
 
-        for b in backends {
+        for _ in 0..max_attempts {
+            let idx = rng.gen_range(0..backends.len());
+            let b = &backends[idx];
             if !b.is_available() {
                 continue;
             }
@@ -94,17 +136,26 @@ impl Scheduler for AdaptiveScheduler {
             if score < min_score - 1e-6 {
                 min_score = score;
                 best = Some(b);
-            } else if (score - min_score).abs() <= 1e-6 {
-                if let Some(prev) = best {
-                    if b.stats().total_requests() < prev.stats().total_requests() {
-                        min_score = score;
-                        best = Some(b);
-                    }
-                }
+            }
+
+            sampled_count += 1;
+            if sampled_count >= max_samples {
+                break;
             }
         }
 
-        best.cloned()
+        if let Some(b) = best {
+            return Some((*b).clone());
+        }
+
+        // Fallback: If random sampling failed to find healthy nodes, scan sequentially
+        for b in backends {
+            if b.is_available() {
+                return Some(b.clone());
+            }
+        }
+
+        None
     }
 
     fn algorithm(&self) -> AlgorithmType {

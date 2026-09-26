@@ -13,8 +13,8 @@ export function Features() {
     {
       icon: <Cpu size={22} color="#f5f5f7" />,
       title: "Lock-Free Buffer & Connection Pools",
-      desc: "Pre-allocated ArrayQueue pools eliminate malloc/free syscall overhead on the hot path, achieving true zero-allocation request forwarding.",
-      tag: "Zero Allocation",
+      desc: "Pre-allocated ArrayQueue pools eliminate malloc/free syscall overhead on the hot path, achieving an allocation-minimized streaming hot path.",
+      tag: "Allocation-Minimized",
     },
     {
       icon: <RefreshCw size={22} color="#f5f5f7" />,
@@ -64,7 +64,7 @@ export function Features() {
     <section id="architecture" className="section" style={{ position: "relative" }}>
       <div className="container">
         <div className="section-label">Engineering Foundations</div>
-        <h2 className="section-title">Zero Allocation. Lock-Free. Safe Rust.</h2>
+        <h2 className="section-title">Allocation-Minimized. Lock-Free. Safe Rust.</h2>
         <p className="section-desc">
           Every microsecond matters. NexusLB combines low-level OS capabilities with modern Rust concurrency abstractions to deliver unmatched performance.
         </p>

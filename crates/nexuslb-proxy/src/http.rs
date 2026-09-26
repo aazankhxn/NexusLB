@@ -81,7 +81,7 @@ impl HttpProxy {
             host_range: Option<(usize, usize)>,
             inm_range: Option<(usize, usize)>,
             has_fwd: bool,
-            header_ranges: [(u16, u16, u16, u16); 32],
+            header_ranges: [(u16, u16, u16, u16); 96],
             header_count: usize,
         }
 
@@ -97,8 +97,18 @@ impl HttpProxy {
                     total_read = n;
                 }
 
+                const MAX_HEADER_LIMIT: usize = 64 * 1024;
+                if total_read >= MAX_HEADER_LIMIT {
+                    let err_resp = b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Header Fields Too Large\n";
+                    let _ = client.write_all(err_resp).await;
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "HTTP headers exceeded maximum configured limit (64KB)",
+                    ));
+                }
+
                 let parsed = loop {
-                    let mut headers = [httparse::EMPTY_HEADER; 32];
+                    let mut headers = [httparse::EMPTY_HEADER; 96];
                     let mut req = httparse::Request::new(&mut headers);
                     match req.parse(&read_buf[..total_read]) {
                         Ok(httparse::Status::Complete(hlen)) => {
@@ -112,26 +122,40 @@ impl HttpProxy {
                             let path_range = (p_s, p_s + p_ref.len());
 
                             let mut cl = 0usize;
+                            let mut cl_count = 0usize;
+                            let mut te_present = false;
+                            let mut smuggling_detected = false;
                             let mut ws = false;
                             let mut close = false;
                             let mut tp_r = None;
                             let mut h_r = None;
                             let mut inm_r = None;
                             let mut fwd = false;
-                            let mut header_ranges = [(0u16, 0u16, 0u16, 0u16); 32];
-                            let header_count = req.headers.len().min(32);
+                            let mut header_ranges = [(0u16, 0u16, 0u16, 0u16); 96];
+                            let header_count = req.headers.len().min(96);
 
-                            for (i, h) in req.headers.iter().enumerate().take(32) {
+                            for (i, h) in req.headers.iter().enumerate().take(96) {
                                 let name_s = (h.name.as_ptr() as usize - buf_base) as u16;
                                 let name_e = name_s + h.name.len() as u16;
                                 let val_s = (h.value.as_ptr() as usize - buf_base) as u16;
                                 let val_e = val_s + h.value.len() as u16;
                                 header_ranges[i] = (name_s, name_e, val_s, val_e);
 
+                                // Smuggling defense: check for illegal CR or LF inside header value
+                                if h.value.iter().any(|&b| b == b'\r' || b == b'\n') {
+                                    smuggling_detected = true;
+                                }
+
                                 if h.name.eq_ignore_ascii_case("content-length") {
+                                    cl_count += 1;
+                                    if cl_count > 1 {
+                                        smuggling_detected = true;
+                                    }
                                     if let Ok(s) = std::str::from_utf8(h.value) {
                                         cl = s.trim().parse::<usize>().unwrap_or(0);
                                     }
+                                } else if h.name.eq_ignore_ascii_case("transfer-encoding") {
+                                    te_present = true;
                                 } else if h.name.eq_ignore_ascii_case("connection")
                                     && h.value.eq_ignore_ascii_case(b"close")
                                 {
@@ -154,6 +178,27 @@ impl HttpProxy {
                                 }
                             }
 
+                            // RFC 9112 Section 6.3: A message MUST NOT contain both Transfer-Encoding and Content-Length.
+                            // Proxies must reject such requests to prevent HTTP request smuggling desync.
+                            if smuggling_detected || (cl_count > 1) || (cl_count > 0 && te_present) {
+                                let err_resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Request (Smuggling Defense - RFC 9112)\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "HTTP request rejected due to request smuggling vulnerability defense (RFC 9112)",
+                                ));
+                            }
+
+                            const MAX_BODY_LIMIT: usize = 16 * 1024 * 1024;
+                            if cl > MAX_BODY_LIMIT {
+                                let err_resp = b"HTTP/1.1 413 Payload Too Large\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nPayload Too Large\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "HTTP body exceeded maximum configured limit (16MB)",
+                                ));
+                            }
+
                             break ParsedReq {
                                 method_range,
                                 path_range,
@@ -170,11 +215,17 @@ impl HttpProxy {
                             };
                         }
                         Ok(httparse::Status::Partial) => {
-                            if total_read == read_buf.len() {
+                            if total_read >= MAX_HEADER_LIMIT {
+                                let err_resp = b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Header Fields Too Large\n";
+                                let _ = client.write_all(err_resp).await;
                                 return Err(std::io::Error::new(
                                     std::io::ErrorKind::InvalidData,
-                                    "HTTP headers exceeded buffer size",
+                                    "HTTP headers exceeded maximum configured limit (64KB)",
                                 ));
+                            }
+                            if total_read == read_buf.len() {
+                                let new_len = (read_buf.len() * 2).min(MAX_HEADER_LIMIT);
+                                read_buf.resize(new_len, 0);
                             }
                             let n = client.read(&mut read_buf[total_read..]).await?;
                             if n == 0 {
@@ -184,24 +235,29 @@ impl HttpProxy {
                             total_read += n;
                         }
                         Err(e) => {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("HTTP parse error: {:?}", e),
-                            ));
+                            if matches!(e, httparse::Error::TooManyHeaders) || total_read >= MAX_HEADER_LIMIT {
+                                let err_resp = b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Header Fields Too Large\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "HTTP headers exceeded maximum header limit (64KB / too many headers)",
+                                ));
+                            } else {
+                                let err_resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Request\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("HTTP parse error: {:?}", e),
+                                ));
+                            }
                         }
                     }
                 };
 
                 let req_total_len = parsed.header_len + parsed.body_len;
 
-                // 2. Read remainder of body into buffer BEFORE borrowing header slices
-                while total_read < req_total_len {
-                    if total_read == read_buf.len() {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "HTTP body exceeded buffer size",
-                        ));
-                    }
+                // 2. Read initial part of body into buffer (as much as fits without blocking)
+                while total_read < req_total_len && total_read < read_buf.len() {
                     let n = client.read(&mut read_buf[total_read..]).await?;
                     if n == 0 {
                         return Err(std::io::Error::new(
@@ -212,6 +268,9 @@ impl HttpProxy {
                     metrics.add_bytes_received(n as u64);
                     total_read += n;
                 }
+
+                let initial_body_bytes = total_read.saturating_sub(parsed.header_len).min(parsed.body_len);
+                let remaining_body_to_stream = parsed.body_len.saturating_sub(initial_body_bytes);
 
                 let method = std::str::from_utf8(&read_buf[parsed.method_range.0..parsed.method_range.1]).unwrap_or("GET");
                 let path = std::str::from_utf8(&read_buf[parsed.path_range.0..parsed.path_range.1]).unwrap_or("/");
@@ -423,8 +482,8 @@ impl HttpProxy {
                     }
                 }
 
-                if parsed.body_len > 0 {
-                    req_bytes.extend_from_slice(&read_buf[parsed.header_len..req_total_len]);
+                if initial_body_bytes > 0 {
+                    req_bytes.extend_from_slice(&read_buf[parsed.header_len..parsed.header_len + initial_body_bytes]);
                 }
 
                 if parsed.is_ws {
@@ -451,6 +510,7 @@ impl HttpProxy {
                         &mut client,
                         cached_upstream.take(),
                         &req_bytes,
+                        remaining_body_to_stream,
                         &backend,
                         &conn_pool,
                         &metrics,
@@ -469,9 +529,10 @@ impl HttpProxy {
                     ));
 
                     // Shift leftover bytes in read_buf to front
-                    let leftover = total_read.saturating_sub(req_total_len);
+                    let initial_req_bytes_in_buf = parsed.header_len + initial_body_bytes;
+                    let leftover = total_read.saturating_sub(initial_req_bytes_in_buf);
                     if leftover > 0 {
-                        read_buf.copy_within(req_total_len..total_read, 0);
+                        read_buf.copy_within(initial_req_bytes_in_buf..total_read, 0);
                     }
                     total_read = leftover;
 
@@ -513,6 +574,7 @@ impl HttpProxy {
         client: &mut S,
         existing_upstream: Option<TcpStream>,
         initial_payload: &[u8],
+        remaining_body: usize,
         backend: &Backend,
         conn_pool: &ConnectionPool,
         metrics: &WorkerMetrics,
@@ -538,7 +600,7 @@ impl HttpProxy {
                 })?,
         };
 
-        // 2. Write request to upstream; reconnect once if stale socket fails
+        // 2. Write initial payload (headers + initial body) to upstream; reconnect once if stale socket fails
         if let Err(e) = upstream.write_all(initial_payload).await {
             trace!("Cached upstream write error ({}), reconnecting", e);
             upstream = conn_pool
@@ -556,6 +618,26 @@ impl HttpProxy {
                     backend.stats().record_error();
                     metrics.inc_backend_errors();
                 })?;
+        }
+
+        // 2b. Stream any remaining request body from client directly to upstream in chunks
+        if remaining_body > 0 {
+            let mut left = remaining_body;
+            while left > 0 {
+                let chunk_size = left.min(resp_buf.len());
+                let n = client.read(&mut resp_buf[..chunk_size]).await?;
+                if n == 0 {
+                    backend.stats().record_error();
+                    metrics.inc_backend_errors();
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "Client disconnected before completing request body stream",
+                    ));
+                }
+                metrics.add_bytes_received(n as u64);
+                upstream.write_all(&resp_buf[..n]).await?;
+                left -= n;
+            }
         }
 
         // 3. Read response headers from upstream
@@ -687,3 +769,229 @@ impl HttpProxy {
         Ok((status_code, is_close, total_bytes, duration, upstream))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nexuslb_core::backend::Backend;
+    use nexuslb_core::types::{BackendAddress, BackendId, Protocol};
+
+    fn test_backend() -> Arc<Backend> {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        Arc::new(Backend::new(
+            BackendId::new(1),
+            "test-backend",
+            BackendAddress::new(addr),
+            100,
+            Protocol::Http1,
+            None,
+        ))
+    }
+
+    fn test_fixtures() -> (ConnectionPool, Arc<WorkerMetrics>, BufferPool, Arc<nexuslb_cache::HttpCache>, Arc<AccessLogger>, Arc<FilterChain>) {
+        let conn_pool = ConnectionPool::new(nexuslb_network::ConnectionPoolConfig::default());
+        let metrics = Arc::new(WorkerMetrics::new(0));
+        let buffer_pool = BufferPool::new(16, 16384);
+        let cache = Arc::new(nexuslb_cache::HttpCache::new(1024 * 1024));
+        let (logger, _) = AccessLogger::new(false, "combined", "stdout");
+        let access_logger = Arc::new(logger);
+        let filter_chain = Arc::new(FilterChain::new());
+        (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain)
+    }
+
+    #[tokio::test]
+    async fn test_smuggling_defense_cl_and_te_rejected() {
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let backend = test_backend();
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let read_buf = buffer_pool.acquire();
+
+        // Write malicious request containing BOTH Content-Length and Transfer-Encoding (RFC 9112 Sec 6.3)
+        tokio::spawn(async move {
+            let req = b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n";
+            client_side.write_all(req).await.unwrap();
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("400 Bad Request"));
+            assert!(resp_str.contains("Smuggling Defense"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_err(), "Must reject request with smuggling attack vector");
+    }
+
+    #[tokio::test]
+    async fn test_smuggling_defense_duplicate_content_length() {
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let backend = test_backend();
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let read_buf = buffer_pool.acquire();
+
+        // Write malicious request with duplicate Content-Length headers
+        tokio::spawn(async move {
+            let req = b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\nhello";
+            client_side.write_all(req).await.unwrap();
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("400 Bad Request"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_err(), "Must reject duplicate Content-Length");
+    }
+
+    #[tokio::test]
+    async fn test_payload_too_large_rejected() {
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let backend = test_backend();
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let read_buf = buffer_pool.acquire();
+
+        tokio::spawn(async move {
+            // Content-Length is 20MB (exceeds default 16MB limit)
+            let req = b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 20971520\r\n\r\n";
+            client_side.write_all(req).await.unwrap();
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("413 Payload Too Large"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_err(), "Must reject body > 16MB with 413");
+    }
+
+    #[tokio::test]
+    async fn test_large_body_streaming_beyond_buffer() {
+        // Spin up a mock backend listener
+        let backend_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend_listener.local_addr().unwrap();
+
+        let backend = Arc::new(Backend::new(
+            BackendId::new(99),
+            "mock-backend",
+            BackendAddress::new(backend_addr),
+            100,
+            Protocol::Http1,
+            None,
+        ));
+        backend.set_state(nexuslb_core::types::BackendState::Up);
+
+        // Spawn backend handler that expects a 64KB upload (larger than 16KB default buffer)
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = backend_listener.accept().await {
+                let mut buf = vec![0u8; 100_000];
+                let mut total = 0;
+                while total < 65536 {
+                    let n = socket.read(&mut buf[total..]).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    total += n;
+                }
+                // Respond 200 OK
+                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+                socket.write_all(resp).await.unwrap();
+            }
+        });
+
+        let (mut client_side, server_side) = tokio::io::duplex(131072);
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let read_buf = buffer_pool.acquire();
+
+        tokio::spawn(async move {
+            let body_size = 65536usize;
+            let header = format!("POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n", body_size);
+            client_side.write_all(header.as_bytes()).await.unwrap();
+
+            // Write 64KB body in chunks
+            let chunk = vec![b'X'; 4096];
+            for _ in 0..(body_size / 4096) {
+                client_side.write_all(&chunk).await.unwrap();
+            }
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("200 OK"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_ok(), "64KB body streamed successfully through 16KB buffer");
+    }
+}
+
+

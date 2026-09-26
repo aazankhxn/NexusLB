@@ -146,7 +146,7 @@ export function Navbar() {
                 fontWeight: 500,
               }}
             >
-              v0.0.2-pre
+              v0.0.3
             </span>
           </Link>
 

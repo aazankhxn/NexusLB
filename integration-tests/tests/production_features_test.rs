@@ -80,6 +80,7 @@ async fn test_hot_reload_admin_api() {
         rate_limit: Default::default(),
         access_log: Default::default(),
         discovery: Default::default(),
+        limits: Default::default(),
     });
 
     let reload_counter = Arc::new(AtomicUsize::new(0));
@@ -97,7 +98,7 @@ async fn test_hot_reload_admin_api() {
     let admin_addr = listener.local_addr().unwrap();
     drop(listener);
 
-    let admin = AdminServer::new(admin_addr, None, metrics, shared_state.clone(), config)
+    let admin = AdminServer::new(admin_addr, Some("test-admin-secret".to_string()), metrics, shared_state.clone(), config)
         .with_reloader(reloader);
 
     tokio::spawn(async move {
@@ -106,10 +107,10 @@ async fn test_hot_reload_admin_api() {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Send POST /reload request
+    // Send authenticated POST /reload request
     let mut stream = TcpStream::connect(admin_addr).await.unwrap();
     let req = format!(
-        "POST /reload HTTP/1.1\r\nHost: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        "POST /reload HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer test-admin-secret\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
         admin_addr
     );
     stream.write_all(req.as_bytes()).await.unwrap();

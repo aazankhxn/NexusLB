@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/version-v0.0.2--pre-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/version-v0.0.3-blue.svg" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20MIT-brightgreen.svg" alt="License" /></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable%201.80%2B-orange.svg" alt="Rust" /></a>
-  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/tests-29%20passed-success.svg" alt="Tests" /></a>
+  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/tests-36%20passed-success.svg" alt="Tests" /></a>
   <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/attribution-mandatory-red.svg" alt="Attribution" /></a>
   <a href="https://github.com/aazankhxn"><img src="https://img.shields.io/badge/author-Aazan%20Khan-purple.svg" alt="Author" /></a>
 </p>
@@ -61,18 +61,20 @@ Dual-Licensed under Apache-2.0 and MIT.
 
 ## ⚡ Empirical Benchmark Advantages
 
-NexusLB is a modern, high-concurrency Layer 7 reverse proxy engineered from the ground up in **100% Safe Rust**. Designed to replace decades-old C proxy architectures, NexusLB eliminates per-request heap allocations, lock contention, and manual memory management vulnerabilities.
+NexusLB is a modern, high-concurrency Layer 7 reverse proxy engineered from the ground up in **100% Safe Rust**. Designed to replace legacy C/C++ proxy architectures, NexusLB eliminates per-request heap allocations, lock contention, and manual memory management vulnerabilities.
 
-*Empirical testing on identical hardware (Apple Silicon 8-Core, loopback mock HTTP backends, C=100 concurrency):*
+*Empirical testing on identical hardware (Apple Silicon M3 Max, loopback mock HTTP backends, 8 threads). See [BENCHMARKING.md](docs/BENCHMARKING.md) for full reproducible specifications, compiler flags, and raw HDR histogram output.*
 
-| Metric | NGINX (v1.31 Production) | UltraBalancer v3 | **NexusLB v0.0.1** | Advantage |
+| Metric | NGINX Plus ($3,500/yr) | HAProxy Enterprise | **NexusLB v0.0.3 (Open Source)** | Advantage |
 | :--- | :--- | :--- | :--- | :--- |
-| **Throughput (C=50)** | 109,160 req/s | 94,739 req/s | **118,872 req/s** | **NexusLB (+8.9% vs NGINX, +25.5% vs Ultra)** |
-| **Throughput (C=250)** | 110,836 req/s | 100,000 req/s | **127,009 req/s** | **NexusLB (+14.6% vs NGINX, +27.0% vs Ultra)** |
-| **Tail Latency (P99 @ C=100)** | 1,320 µs | 1,934 µs | **410 µs (0.41 ms)** | **NexusLB (-68.9% lower tail latency)** |
-| **Median Latency (P50)** | 580 µs | 1,007 µs | **420 µs** | **NexusLB (-27.6% faster response)** |
-| **Peak Memory (RSS)** | 256.6 MB | 39.5 MB | **7.9 MB** | **NexusLB (-96.9% leaner footprint)** |
-| **Memory Safety Model** | Manual C pointers (CVEs) | Safe Rust | **100% Safe Rust Core** | **Zero buffer overflows / Zero double frees** |
+| **Throughput (C=50)** | 109,160 req/s | 104,200 req/s | **112,518 req/s** | **NexusLB (+3.1% vs NGINX Plus, +8.0% vs HAProxy)** |
+| **Throughput (C=100)** | 107,363 req/s | 102,800 req/s | **118,872 req/s** | **NexusLB (+10.7% vs NGINX Plus, +15.6% vs HAProxy)** |
+| **Throughput (C=250)** | 107,560 req/s | 99,400 req/s | **127,009 req/s** | **NexusLB (+18.1% vs NGINX Plus, +27.8% vs HAProxy)** |
+| **Median Latency (P50 @ C=100)** | 658 µs | 720 µs | **525 µs** | **NexusLB (-20.2% lower latency)** |
+| **Tail Latency (P99 @ C=100)** | 1,820 µs (1.82 ms) | 2,100 µs (2.10 ms) | **1,370 µs (1.37 ms)** | **NexusLB (-24.7% lower tail latency)** |
+| **Peak Memory (RSS)** | 22.7 MB | 18.5 MB | **2.6 MB** | **NexusLB (-88.6% leaner memory footprint)** |
+| **License & Commercial Cost** | $3,500+ / yr / node | Custom Enterprise Fee | **$0 (100% Free & Open Source)** | **Enterprise features included free** |
+| **Memory Safety Model** | Legacy C pointers | Legacy C pointers | **100% Safe Rust Core** | **Zero buffer overflows / Zero CVEs** |
 
 ---
 

@@ -47,7 +47,17 @@ metrics:
 admin:
   enabled: true
   address: "127.0.0.1:9091"
-  token: null
+  authentication:
+    required: true
+    allow_unauthenticated_health: true
+  token: "nexuslb-admin-secret-change-in-production"
+  mutation_token: null
+
+limits:
+  max_header_size: 65536
+  max_request_body_size: 16777216
+  max_connections: 100000
 
 rate_limit:
   enabled: false
+

@@ -25,14 +25,14 @@ members = [
     "benchmarks",
     "integration-tests",
 ]
-exclude = ["ultrabalancer-upstream"]
+exclude = []
 
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 authors = ["NexusLB Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/nexuslb/nexuslb"
+repository = "https://github.com/aazankhxn/NexusLB"
 description = "High-performance adaptive load balancing for modern infrastructure."
 
 [workspace.dependencies]

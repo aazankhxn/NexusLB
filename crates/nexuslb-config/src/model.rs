@@ -25,6 +25,8 @@ pub struct NexusConfig {
     pub access_log: AccessLogConfig,
     #[serde(default)]
     pub discovery: DiscoveryConfig,
+    #[serde(default)]
+    pub limits: LimitsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,12 +263,33 @@ fn default_metrics_addr() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminConfig {
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default = "default_admin_addr")]
     pub address: String,
     #[serde(default)]
     pub token: Option<String>,
+    #[serde(default)]
+    pub mutation_token: Option<String>,
+    #[serde(default)]
+    pub authentication: AdminAuthConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuthConfig {
+    #[serde(default = "default_true")]
+    pub required: bool,
+    #[serde(default = "default_true")]
+    pub allow_unauthenticated_health: bool,
+}
+
+impl Default for AdminAuthConfig {
+    fn default() -> Self {
+        Self {
+            required: true,
+            allow_unauthenticated_health: true,
+        }
+    }
 }
 
 impl Default for AdminConfig {
@@ -275,12 +298,46 @@ impl Default for AdminConfig {
             enabled: true,
             address: default_admin_addr(),
             token: None,
+            mutation_token: None,
+            authentication: AdminAuthConfig::default(),
         }
     }
 }
 
 fn default_admin_addr() -> String {
     "127.0.0.1:9091".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitsConfig {
+    #[serde(default = "default_max_header_size")]
+    pub max_header_size: usize,
+    #[serde(default = "default_max_body_size")]
+    pub max_request_body_size: usize,
+    #[serde(default = "default_max_conns")]
+    pub max_connections: usize,
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_header_size: default_max_header_size(),
+            max_request_body_size: default_max_body_size(),
+            max_connections: default_max_conns(),
+        }
+    }
+}
+
+fn default_max_header_size() -> usize {
+    64 * 1024 // 64 KB
+}
+
+fn default_max_body_size() -> usize {
+    16 * 1024 * 1024 // 16 MB
+}
+
+fn default_max_conns() -> usize {
+    100_000
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -349,4 +406,38 @@ pub struct FilterConfig {
     pub add_headers: HashMap<String, String>,
     #[serde(default)]
     pub remove_headers: Vec<String>,
+}
+
+impl NexusConfig {
+    /// Return a sanitized, redacted copy of configuration safe for public inspection via the API.
+    pub fn to_redacted(&self) -> Self {
+        let mut redacted = self.clone();
+
+        // 1. Redact admin auth tokens
+        if redacted.admin.token.is_some() {
+            redacted.admin.token = Some("[REDACTED]".to_string());
+        }
+        if redacted.admin.mutation_token.is_some() {
+            redacted.admin.mutation_token = Some("[REDACTED]".to_string());
+        }
+
+        // 2. Redact TLS private key paths
+        if redacted.tls.key_path.is_some() {
+            redacted.tls.key_path = Some("[REDACTED]".to_string());
+        }
+        for sni in redacted.tls.sni.values_mut() {
+            sni.key_path = "[REDACTED]".to_string();
+        }
+
+        // 3. Redact route filter secrets (JWT tokens, HMAC keys)
+        for route in &mut redacted.routes {
+            if let Some(ref mut filters) = route.filters {
+                if filters.jwt_secret.is_some() {
+                    filters.jwt_secret = Some("[REDACTED]".to_string());
+                }
+            }
+        }
+
+        redacted
+    }
 }

@@ -34,8 +34,13 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "NexusLB Team" }],
   icons: {
-    icon: "/nexuslb.png",
-    apple: "/nexuslb.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/nexuslb.png", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 
@@ -49,8 +54,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/nexuslb.png" type="image/png" />
-        <link rel="apple-touch-icon" href="/nexuslb.png" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
       </head>
       <body>
         {children}

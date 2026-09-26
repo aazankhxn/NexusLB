@@ -2,8 +2,8 @@ use crossbeam::queue::ArrayQueue;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-pub const DEFAULT_BUFFER_SIZE: usize = 32 * 1024; // 32KB optimal for TCP streaming
-pub const DEFAULT_POOL_CAPACITY: usize = 2048;
+pub const DEFAULT_BUFFER_SIZE: usize = 16 * 1024; // 16KB optimal for HTTP / TCP streaming
+pub const DEFAULT_POOL_CAPACITY: usize = 512;
 
 /// Lock-free memory pool for reusable I/O buffers to eliminate hot-path allocations
 #[derive(Clone)]
@@ -19,8 +19,8 @@ struct BufferPoolInner {
 impl BufferPool {
     pub fn new(capacity: usize, buffer_size: usize) -> Self {
         let queue = ArrayQueue::new(capacity);
-        // Pre-warm the pool with half capacity for immediate throughput
-        let prewarm_count = capacity / 2;
+        // Pre-warm the pool with a lean working set (64 buffers = 1MB)
+        let prewarm_count = capacity.min(64);
         for _ in 0..prewarm_count {
             let _ = queue.push(vec![0u8; buffer_size]);
         }

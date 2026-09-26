@@ -104,8 +104,8 @@ struct CacheStorage {
 impl CacheStorage {
     fn new(capacity: usize) -> Self {
         Self {
-            map: AHashMap::with_capacity(capacity.min(4096)),
-            order: VecDeque::with_capacity(capacity.min(4096)),
+            map: AHashMap::with_capacity(capacity.min(256)),
+            order: VecDeque::with_capacity(capacity.min(256)),
             capacity,
         }
     }

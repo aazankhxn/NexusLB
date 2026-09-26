@@ -6,13 +6,13 @@ Identical local testing conditions (Apple Silicon M-Series, 8 Cores, identical l
 
 | Metric | UltraBalancer v3.0.0 | NexusLB v0.1.0 | Advantage |
 | :--- | :--- | :--- | :--- |
-| **Throughput (C=50)** | 89137.9 req/s | **123828.0 req/s** | NexusLB |
-| **Throughput (C=100)** | 95262.0 req/s | **118814.4 req/s** | NexusLB |
-| **Throughput (C=250)** | 103988.2 req/s | **106934.8 req/s** | NexusLB |
-| **Median Latency (P50)** | 1012 µs | **810 µs** | NexusLB |
-| **P90 Latency** | 1414 µs | **877 µs** | NexusLB |
-| **Tail Latency (P99)** | 1935 µs | **1288 µs** | NexusLB |
-| **Resident Memory (RSS)** | 35.8 MB | **37.0 MB** | UltraBalancer |
+| **Throughput (C=50)** | 94739.4 req/s | **134281.9 req/s** | NexusLB |
+| **Throughput (C=100)** | 96441.2 req/s | **132472.9 req/s** | NexusLB |
+| **Throughput (C=250)** | 100000.1 req/s | **127009.3 req/s** | NexusLB |
+| **Median Latency (P50)** | 1007 µs | **753 µs** | NexusLB |
+| **P90 Latency** | 1411 µs | **794 µs** | NexusLB |
+| **Tail Latency (P99)** | 1934 µs | **846 µs** | NexusLB |
+| **Resident Memory (RSS)** | 39.5 MB | **16.5 MB** | NexusLB |
 
 ## 2. Qualitative Architectural & Feature Comparison
 

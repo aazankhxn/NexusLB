@@ -1,0 +1,67 @@
+server:
+  listen:
+    - "0.0.0.0:8080"
+  workers: auto
+  engine: auto
+  reuse_port: true
+  tcp_nodelay: true
+  max_connections: 500000
+
+load_balancer:
+  algorithm: round_robin
+  default_pool: default
+
+backends:
+  - name: node-1
+    address: "127.0.0.1:9001"
+    weight: 100
+    protocol: http1
+    pool: default
+
+  - name: node-2
+    address: "127.0.0.1:9002"
+    weight: 100
+    protocol: http1
+    pool: default
+
+routes:
+  - name: all-route
+    host: null
+    path: "/*"
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+    pool: default
+    priority: 100
+
+health_check:
+  enabled: true
+  interval: 5s
+  timeout: 1s
+  healthy_threshold: 2
+  unhealthy_threshold: 3
+  http_path: "/health"
+  expected_status: 200
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  success_threshold: 3
+  cool_down: 10s
+
+tls:
+  enabled: false
+
+metrics:
+  enabled: true
+  address: "0.0.0.0:9090"
+
+admin:
+  enabled: true
+  address: "127.0.0.1:9091"
+  token: null
+
+rate_limit:
+  enabled: false

@@ -25,6 +25,7 @@ members = [
     "benchmarks",
     "integration-tests",
 ]
+exclude = ["showdown/**", "ultrabalancer-upstream"]
 
 [workspace.package]
 version = "0.1.0"

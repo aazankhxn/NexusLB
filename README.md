@@ -419,7 +419,7 @@ Experience the interactive Apple-designed website:
 - **Visual Configuration Builder:** Interactive YAML generator with iOS switch controls.
 - **In-Depth Documentation Center:** 8 categorized technical modules with live search and table of contents.
 
-Deployed on Vercel: **[https://nexus-61284jq32-eagleop07s-projects.vercel.app](https://nexus-61284jq32-eagleop07s-projects.vercel.app)**  
+Deployed at: **[https://nexuslb.aazankhan.com](https://nexuslb.aazankhan.com)** *(mirror: [https://nexus-lb-eight.vercel.app](https://nexus-lb-eight.vercel.app))*  
 Local preview: `http://localhost:3000`
 
 ---

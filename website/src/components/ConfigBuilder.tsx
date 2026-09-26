@@ -109,7 +109,7 @@ metrics:
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
             gap: "28px",
             maxWidth: "1080px",
             margin: "0 auto",
@@ -292,6 +292,7 @@ metrics:
                 lineHeight: 1.6,
                 color: "#9cdcfe",
                 overflowY: "auto",
+                overflowX: "auto",
                 maxHeight: "520px",
                 whiteSpace: "pre",
               }}

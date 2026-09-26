@@ -146,166 +146,184 @@ export function Showdown() {
           </div>
 
           {/* Metric 1: Throughput */}
-          <div style={{ marginBottom: "32px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
+          <div style={{ marginBottom: "36px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Throughput (Requests / Second)</span>
                 <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Higher is better</span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent-emerald)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-emerald)", fontFamily: "var(--font-mono)" }}>
                 NexusLB +{rpsDiff}% faster
               </span>
             </div>
 
-            {/* NexusLB bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden", marginBottom: "8px" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${nexusRpsPct}%`,
-                  background: "linear-gradient(90deg, #00f0ff, #0071e3)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#000000",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                NexusLB: {current.nexusRps.toLocaleString()} req/s
+            {/* NexusLB item */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-cyan)", display: "inline-block" }} />
+                  NexusLB v0.0.1
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-cyan)" }}>
+                  {current.nexusRps.toLocaleString()} req/s
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${nexusRpsPct}%`,
+                    background: "linear-gradient(90deg, #00f0ff, #0071e3)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
 
-            {/* Competitor bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${compRpsPct}%`,
-                  background: "linear-gradient(90deg, #475569, #64748b)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#f1f5f9",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                {compName}: {current.compRps.toLocaleString()} req/s
+            {/* Competitor item */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+                  {compName}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {current.compRps.toLocaleString()} req/s
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${compRpsPct}%`,
+                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
           </div>
 
           {/* Metric 2: Median Latency */}
-          <div style={{ marginBottom: "32px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
+          <div style={{ marginBottom: "36px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Median Latency P50 (Microseconds)</span>
                 <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Lower is better</span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
                 NexusLB {latDiff}% lower latency
               </span>
             </div>
 
-            {/* NexusLB bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden", marginBottom: "8px" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${nexusLatPct}%`,
-                  background: "linear-gradient(90deg, #00f0ff, #5e5ce6)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#000000",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                NexusLB: {current.nexusLat} µs
+            {/* NexusLB item */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-cyan)", display: "inline-block" }} />
+                  NexusLB v0.0.1
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-cyan)" }}>
+                  {current.nexusLat} µs
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${nexusLatPct}%`,
+                    background: "linear-gradient(90deg, #00f0ff, #5e5ce6)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
 
-            {/* Competitor bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${compLatPct}%`,
-                  background: "linear-gradient(90deg, #475569, #64748b)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#f1f5f9",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                {compName}: {current.compLat} µs
+            {/* Competitor item */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+                  {compName}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {current.compLat} µs
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${compLatPct}%`,
+                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
           </div>
 
           {/* Metric 3: Resident Memory */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Resident Memory Footprint RSS (MB)</span>
                 <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Lower is better</span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent-purple)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-purple)", fontFamily: "var(--font-mono)" }}>
                 NexusLB {memDiff}% leaner
               </span>
             </div>
 
-            {/* NexusLB bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden", marginBottom: "8px" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${nexusMemPct}%`,
-                  background: "linear-gradient(90deg, #bf5af2, #ff375f)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#ffffff",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                NexusLB: {current.nexusMem} MB
+            {/* NexusLB item */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-purple)", display: "inline-block" }} />
+                  NexusLB v0.0.1
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-purple)" }}>
+                  {current.nexusMem} MB
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${nexusMemPct}%`,
+                    background: "linear-gradient(90deg, #bf5af2, #ff375f)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
 
-            {/* Competitor bar */}
-            <div style={{ height: "40px", backgroundColor: "rgba(0, 0, 0, 0.4)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255, 255, 255, 0.08)", overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  width: `${compMemPct}%`,
-                  background: "linear-gradient(90deg, #475569, #64748b)",
-                  display: "flex",
-                  alignItems: "center",
-                  paddingLeft: "16px",
-                  color: "#f1f5f9",
-                  fontFamily: "var(--font-mono)",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  transition: "width 0.5s var(--spring-snappy)",
-                }}
-              >
-                {compName}: {current.compMem} MB
+            {/* Competitor item */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+                  {compName}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
+                  {current.compMem} MB
+                </span>
+              </div>
+              <div style={{ height: "10px", backgroundColor: "rgba(255, 255, 255, 0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${compMemPct}%`,
+                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    borderRadius: "9999px",
+                    transition: "width 0.5s var(--spring-snappy)",
+                  }}
+                />
               </div>
             </div>
           </div>

@@ -52,7 +52,7 @@ export function AlgorithmSimulator() {
 
     const resize = () => {
       if (canvas.parentElement) {
-        canvas.width = canvas.parentElement.clientWidth - 48;
+        canvas.width = canvas.parentElement.clientWidth;
         canvas.height = 180;
       }
     };
@@ -286,7 +286,7 @@ export function AlgorithmSimulator() {
             <canvas ref={canvasRef} style={{ width: "100%", height: "180px", display: "block" }} />
 
             {/* 4 Node Cluster Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginTop: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px", marginTop: "16px" }}>
               {nodeData.map((node) => {
                 const isDegraded = node.id === 3 && isNode3Degraded;
                 return (

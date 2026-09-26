@@ -10,3 +10,4 @@ website/.next/
 website/out/
 .vercel
 website/.vercel
+.env*

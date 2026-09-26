@@ -414,6 +414,44 @@ cargo bench -p nexuslb-benchmarks
 
 *(Production multi-node network throughput comparisons vs HAProxy/UltraBalancer are recorded using identical hardware configurations in `benchmarks/performance-baseline.json`.)*
 
+### 4. Head-to-Head Showdowns (NexusLB vs. NGINX & UltraBalancer)
+
+NexusLB provides reproducible, automated showdown benchmark harnesses in [`showdown/`](showdown/) that spin up identical upstream mock HTTP backends, measure throughput across concurrency tiers (50, 100, 250 connections), track high-resolution latency percentiles via HDR histograms, and monitor resident memory usage (RSS).
+
+#### A. NexusLB vs. NGINX (Production Config)
+Run the automated NGINX showdown:
+```bash
+./showdown/run_nginx_showdown.sh
+```
+
+| Metric | NGINX (v1.31 Production) | NexusLB v0.1.0 | Advantage |
+| :--- | :--- | :--- | :--- |
+| **Throughput (C=50)** | 113,922 req/s | **116,422 req/s** | **NexusLB (+2.2%)** |
+| **Throughput (C=250)** | 110,836 req/s | **111,362 req/s** | **NexusLB (+0.5%)** |
+| **Tail Latency (P99 @ C=100)** | 5,059 µs | **4,415 µs** | **NexusLB (-12.7% tighter)** |
+| **Tail Latency (P99 @ C=250)** | 15,495 µs | **14,999 µs** | **NexusLB (-3.2% tighter)** |
+| **Peak Resident Memory (RSS)** | 256.6 MB (Master + 8 Workers) | **7.9 MB** | **NexusLB (-96.9% leaner)** |
+
+Detailed architectural comparison available in [`showdown/NGINX_SHOWDOWN_RESULTS.md`](showdown/NGINX_SHOWDOWN_RESULTS.md).
+
+#### B. NexusLB vs. UltraBalancer
+Run the automated UltraBalancer showdown:
+```bash
+./showdown/run_showdown.sh
+```
+
+| Metric | UltraBalancer v3.0.0 | NexusLB v0.1.0 | Advantage |
+| :--- | :--- | :--- | :--- |
+| **Throughput (C=50)** | 94,739 req/s | **134,282 req/s** | **NexusLB (+41.7%)** |
+| **Throughput (C=100)** | 96,441 req/s | **132,473 req/s** | **NexusLB (+37.4%)** |
+| **Throughput (C=250)** | 100,000 req/s | **127,009 req/s** | **NexusLB (+27.0%)** |
+| **Median Latency (P50)** | 1,007 µs | **753 µs** | **NexusLB (-25.2%)** |
+| **Tail Latency (P99)** | 1,934 µs | **846 µs** | **NexusLB (-56.3% tighter)** |
+| **Peak Resident Memory (RSS)** | 39.5 MB | **16.5 MB** | **NexusLB (-58.2% leaner)** |
+
+Detailed architectural comparison available in [`showdown/SHOWDOWN_RESULTS.md`](showdown/SHOWDOWN_RESULTS.md).
+
+
 ---
 
 ## Limitations & Known Constraints

@@ -28,7 +28,7 @@ pub struct ConnectionPoolConfig {
 impl Default for ConnectionPoolConfig {
     fn default() -> Self {
         Self {
-            max_idle_per_backend: 64,
+            max_idle_per_backend: 256,
             idle_timeout: Duration::from_secs(45),
             max_lifetime: Duration::from_secs(300),
             connect_timeout: Duration::from_secs(3),

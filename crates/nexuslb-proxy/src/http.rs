@@ -29,55 +29,28 @@ impl HttpProxy {
         cache: Arc<nexuslb_cache::HttpCache>,
     ) -> std::io::Result<()> {
         let mut read_buf = buffer_pool.acquire();
+        let mut resp_buf = buffer_pool.acquire();
+        let mut req_bytes = Vec::with_capacity(1024);
         let mut total_read = 0;
 
         loop {
-            let (
-                header_len,
-                method,
-                path,
-                is_websocket,
-                client_close,
-                content_length,
-                incoming_traceparent,
-            ) = loop {
+            // 1. Read until headers are fully available
+            let (header_len, body_len) = loop {
                 let mut headers = [httparse::EMPTY_HEADER; 64];
                 let mut req = httparse::Request::new(&mut headers);
 
                 match req.parse(&read_buf[..total_read]) {
                     Ok(httparse::Status::Complete(hlen)) => {
-                        let method = req.method.unwrap_or("GET").to_string();
-                        let path = req.path.unwrap_or("/").to_string();
-
-                        let mut is_ws = false;
                         let mut cl = None;
-                        let mut close = false;
-
-                        let mut incoming_tp = None;
-
                         for h in req.headers.iter() {
-                            if h.name.eq_ignore_ascii_case("upgrade")
-                                && h.value.eq_ignore_ascii_case(b"websocket")
-                            {
-                                is_ws = true;
-                            }
-                            if h.name.eq_ignore_ascii_case("connection")
-                                && h.value.eq_ignore_ascii_case(b"close")
-                            {
-                                close = true;
-                            }
                             if h.name.eq_ignore_ascii_case("content-length") {
                                 if let Ok(s) = std::str::from_utf8(h.value) {
                                     cl = s.trim().parse::<usize>().ok();
                                 }
-                            }
-                            if h.name.eq_ignore_ascii_case("traceparent") {
-                                if let Ok(s) = std::str::from_utf8(h.value) {
-                                    incoming_tp = Some(s.to_string());
-                                }
+                                break;
                             }
                         }
-                        break (hlen, method, path, is_ws, close, cl, incoming_tp);
+                        break (hlen, cl.unwrap_or(0));
                     }
                     Ok(httparse::Status::Partial) => {
                         if total_read == read_buf.len() {
@@ -102,11 +75,9 @@ impl HttpProxy {
                 }
             };
 
-            let span = nexuslb_observability::ProxySpan::new(incoming_traceparent.as_deref());
-            let body_len = content_length.unwrap_or(0);
             let req_total_len = header_len + body_len;
 
-            // Read remainder of body if not yet in buffer
+            // 2. Read remainder of body if not yet in buffer
             while total_read < req_total_len {
                 if total_read == read_buf.len() {
                     return Err(std::io::Error::new(
@@ -125,29 +96,42 @@ impl HttpProxy {
                 total_read += n;
             }
 
-            // Build forwarded request
-            let mut req_bytes = Vec::with_capacity(header_len + 384 + body_len);
-            let _ = write!(&mut req_bytes, "{} {} HTTP/1.1\r\n", method, path);
-
-            // Re-parse headers to accurately reconstruct
+            // 3. Inspect headers and construct forwarded request with zero allocations
             let mut headers = [httparse::EMPTY_HEADER; 64];
             let mut req = httparse::Request::new(&mut headers);
             let _ = req.parse(&read_buf[..header_len]);
 
-            let host_hdr = req
-                .headers
-                .iter()
-                .find(|h| h.name.eq_ignore_ascii_case("host"))
-                .and_then(|h| std::str::from_utf8(h.value).ok())
-                .unwrap_or("localhost");
+            let method = req.method.unwrap_or("GET");
+            let path = req.path.unwrap_or("/");
 
-            let if_none_match = req
-                .headers
-                .iter()
-                .find(|h| h.name.eq_ignore_ascii_case("if-none-match"))
-                .and_then(|h| std::str::from_utf8(h.value).ok());
+            let mut is_websocket = false;
+            let mut client_close = false;
+            let mut incoming_traceparent: Option<&str> = None;
+            let mut host_hdr = "localhost";
+            let mut if_none_match: Option<&str> = None;
 
-            match cache.get(&method, host_hdr, &path, if_none_match) {
+            for h in req.headers.iter() {
+                if h.name.eq_ignore_ascii_case("upgrade")
+                    && h.value.eq_ignore_ascii_case(b"websocket")
+                {
+                    is_websocket = true;
+                } else if h.name.eq_ignore_ascii_case("connection")
+                    && h.value.eq_ignore_ascii_case(b"close")
+                {
+                    client_close = true;
+                } else if h.name.eq_ignore_ascii_case("traceparent") {
+                    incoming_traceparent = std::str::from_utf8(h.value).ok();
+                } else if h.name.eq_ignore_ascii_case("host") {
+                    if let Ok(s) = std::str::from_utf8(h.value) {
+                        host_hdr = s;
+                    }
+                } else if h.name.eq_ignore_ascii_case("if-none-match") {
+                    if_none_match = std::str::from_utf8(h.value).ok();
+                }
+            }
+
+            // 4. RFC 7234 HTTP Cache lookup
+            match cache.get(method, host_hdr, path, if_none_match) {
                 nexuslb_cache::CacheResult::Hit(cached) => {
                     let mut resp_str = format!(
                         "HTTP/1.1 {} OK\r\nAge: {}\r\nX-Cache: HIT\r\nContent-Length: {}\r\n",
@@ -206,6 +190,11 @@ impl HttpProxy {
                 nexuslb_cache::CacheResult::Miss => {}
             }
 
+            // 5. Build forwarded request in reusable req_bytes
+            let span = nexuslb_observability::ProxySpan::new(incoming_traceparent);
+            req_bytes.clear();
+            let _ = write!(&mut req_bytes, "{} {} HTTP/1.1\r\n", method, path);
+
             for h in req.headers.iter() {
                 if !h.name.eq_ignore_ascii_case("x-forwarded-for")
                     && !h.name.eq_ignore_ascii_case("x-forwarded-proto")
@@ -231,7 +220,7 @@ impl HttpProxy {
                 req_bytes.extend_from_slice(&read_buf[header_len..req_total_len]);
             }
 
-            // Move leftover bytes in read_buf to front
+            // Shift leftover bytes in read_buf to front
             let leftover = total_read.saturating_sub(req_total_len);
             if leftover > 0 {
                 read_buf.copy_within(req_total_len..total_read, 0);
@@ -249,7 +238,7 @@ impl HttpProxy {
                 return Self::handle_websocket_upgrade(
                     client,
                     upstream,
-                    req_bytes,
+                    &req_bytes,
                     backend,
                     metrics,
                     buffer_pool,
@@ -259,12 +248,11 @@ impl HttpProxy {
                 Self::forward_http_request(
                     &mut client,
                     upstream,
-                    req_bytes,
-                    content_length,
+                    &req_bytes,
                     backend.clone(),
                     conn_pool.clone(),
                     metrics.clone(),
-                    buffer_pool.clone(),
+                    &mut resp_buf,
                 )
                 .await?;
 
@@ -278,13 +266,13 @@ impl HttpProxy {
     async fn handle_websocket_upgrade(
         client: TcpStream,
         mut upstream: TcpStream,
-        initial_payload: Vec<u8>,
+        initial_payload: &[u8],
         backend: Arc<Backend>,
         metrics: Arc<WorkerMetrics>,
         buffer_pool: BufferPool,
     ) -> std::io::Result<()> {
         trace!("Handling WebSocket handshake upgrade");
-        upstream.write_all(&initial_payload).await?;
+        upstream.write_all(initial_payload).await?;
         TcpProxy::forward(client, upstream, backend, metrics, buffer_pool).await
     }
 
@@ -292,12 +280,11 @@ impl HttpProxy {
     async fn forward_http_request(
         client: &mut TcpStream,
         mut upstream: TcpStream,
-        initial_payload: Vec<u8>,
-        _content_length: Option<usize>,
+        initial_payload: &[u8],
         backend: Arc<Backend>,
         conn_pool: ConnectionPool,
         metrics: Arc<WorkerMetrics>,
-        buffer_pool: BufferPool,
+        resp_buf: &mut [u8],
     ) -> std::io::Result<()> {
         let start = Instant::now();
         metrics.inc_requests();
@@ -305,10 +292,9 @@ impl HttpProxy {
         backend.stats().inc_active_connections();
 
         // Write request to upstream
-        upstream.write_all(&initial_payload).await?;
+        upstream.write_all(initial_payload).await?;
 
         // Read response headers from upstream
-        let mut resp_buf = buffer_pool.acquire();
         let mut total_read = 0;
         let mut header_len = 0;
         let mut content_length = None;
@@ -371,7 +357,7 @@ impl HttpProxy {
         } else if is_close {
             // No Content-Length specified: read until EOF
             loop {
-                let n = upstream.read(&mut resp_buf).await?;
+                let n = upstream.read(resp_buf).await?;
                 if n == 0 {
                     break;
                 }

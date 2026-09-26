@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -89,6 +90,7 @@ impl HttpProxy {
                         if n == 0 {
                             return Ok(()); // Client disconnected
                         }
+                        metrics.add_bytes_received(n as u64);
                         total_read += n;
                     }
                     Err(e) => {
@@ -119,12 +121,13 @@ impl HttpProxy {
                         "Client disconnected before sending complete body",
                     ));
                 }
+                metrics.add_bytes_received(n as u64);
                 total_read += n;
             }
 
             // Build forwarded request
             let mut req_bytes = Vec::with_capacity(header_len + 384 + body_len);
-            req_bytes.extend_from_slice(format!("{} {} HTTP/1.1\r\n", method, path).as_bytes());
+            let _ = write!(&mut req_bytes, "{} {} HTTP/1.1\r\n", method, path);
 
             // Re-parse headers to accurately reconstruct
             let mut headers = [httparse::EMPTY_HEADER; 64];
@@ -216,15 +219,12 @@ impl HttpProxy {
             }
 
             let proto_str = if is_tls { "https" } else { "http" };
-            req_bytes
-                .extend_from_slice(format!("X-Forwarded-For: {}\r\n", client_addr.ip()).as_bytes());
-            req_bytes.extend_from_slice(format!("X-Forwarded-Proto: {}\r\n", proto_str).as_bytes());
-            req_bytes.extend_from_slice(
-                format!(
-                    "traceparent: {}\r\n\r\n",
-                    span.trace_context.to_header_value()
-                )
-                .as_bytes(),
+            let _ = write!(&mut req_bytes, "X-Forwarded-For: {}\r\n", client_addr.ip());
+            let _ = write!(&mut req_bytes, "X-Forwarded-Proto: {}\r\n", proto_str);
+            let _ = write!(
+                &mut req_bytes,
+                "traceparent: {}\r\n\r\n",
+                span.trace_context.to_header_value()
             );
 
             if body_len > 0 {

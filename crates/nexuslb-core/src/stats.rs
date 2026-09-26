@@ -81,6 +81,21 @@ impl AtomicBackendStats {
     }
 
     #[inline(always)]
+    pub fn total_requests(&self) -> u64 {
+        self.total_requests.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn total_errors(&self) -> u64 {
+        self.total_errors.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn total_responses(&self) -> u64 {
+        self.total_responses.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn record_success(&self, latency: Duration, bytes_in: u64, bytes_out: u64) {
         self.total_responses.fetch_add(1, Ordering::Relaxed);
         self.consecutive_errors.store(0, Ordering::Relaxed);

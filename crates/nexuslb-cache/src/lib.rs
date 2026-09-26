@@ -110,7 +110,7 @@ impl CacheStorage {
         }
     }
 
-    fn get(&mut self, key: &CacheKey) -> Option<CachedResponse> {
+    fn get(&self, key: &CacheKey) -> Option<CachedResponse> {
         let entry = self.map.get(key)?;
         if !entry.response.is_fresh() {
             return None;
@@ -166,7 +166,7 @@ impl HttpCache {
 
         let key = CacheKey::new(method, host, path);
         let resp = {
-            let mut storage = self.storage.write();
+            let storage = self.storage.read();
             storage.get(&key)
         };
 

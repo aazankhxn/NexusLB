@@ -20,14 +20,12 @@ impl TcpProxy {
     ) -> std::io::Result<()> {
         let start = Instant::now();
         backend.stats().inc_active_connections();
-        metrics.inc_connections();
 
         let res = splice_engine
             .splice_bidirectional(&mut client, &mut upstream)
             .await;
 
         backend.stats().dec_active_connections();
-        metrics.dec_connections();
 
         match res {
             Ok(stats) => {
@@ -67,7 +65,6 @@ impl TcpProxy {
     ) -> std::io::Result<()> {
         let start = Instant::now();
         backend.stats().inc_active_connections();
-        metrics.inc_connections();
 
         let (mut client_read, mut client_write) = client.split();
         let (mut upstream_read, mut upstream_write) = upstream.split();
@@ -113,7 +110,6 @@ impl TcpProxy {
         let res = tokio::try_join!(client_to_upstream, upstream_to_client);
 
         backend.stats().dec_active_connections();
-        metrics.dec_connections();
 
         match res {
             Ok((bytes_in, bytes_out)) => {

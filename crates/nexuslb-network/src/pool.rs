@@ -1,4 +1,5 @@
-use parking_lot::Mutex;
+use ahash::AHashMap;
+use parking_lot::{Mutex, RwLock};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,14 +37,14 @@ impl Default for ConnectionPoolConfig {
 }
 
 struct BackendPool {
-    idle: VecDeque<PooledConnection>,
+    idle: Mutex<VecDeque<PooledConnection>>,
     active_count: AtomicU64,
 }
 
 impl BackendPool {
     fn new() -> Self {
         Self {
-            idle: VecDeque::new(),
+            idle: Mutex::new(VecDeque::new()),
             active_count: AtomicU64::new(0),
         }
     }
@@ -51,25 +52,39 @@ impl BackendPool {
 
 #[derive(Clone)]
 pub struct ConnectionPool {
-    pools: Arc<Mutex<std::collections::HashMap<BackendId, BackendPool>>>,
+    pools: Arc<RwLock<AHashMap<BackendId, Arc<BackendPool>>>>,
     config: ConnectionPoolConfig,
 }
 
 impl ConnectionPool {
     pub fn new(config: ConnectionPoolConfig) -> Self {
         Self {
-            pools: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            pools: Arc::new(RwLock::new(AHashMap::new())),
             config,
         }
     }
 
-    pub async fn get_or_connect(&self, id: BackendId, addr: SocketAddr) -> Result<TcpStream> {
-        // Try getting an idle connection from the pool
-        {
-            let mut pools = self.pools.lock();
-            let backend_pool = pools.entry(id).or_insert_with(BackendPool::new);
+    #[inline(always)]
+    fn get_or_create_backend_pool(&self, id: BackendId) -> Arc<BackendPool> {
+        let read = self.pools.read();
+        if let Some(pool) = read.get(&id) {
+            return pool.clone();
+        }
+        drop(read);
+        let mut write = self.pools.write();
+        write
+            .entry(id)
+            .or_insert_with(|| Arc::new(BackendPool::new()))
+            .clone()
+    }
 
-            while let Some(conn) = backend_pool.idle.pop_front() {
+    pub async fn get_or_connect(&self, id: BackendId, addr: SocketAddr) -> Result<TcpStream> {
+        let backend_pool = self.get_or_create_backend_pool(id);
+
+        // Try getting an idle connection from the pool without blocking any other backends
+        {
+            let mut idle = backend_pool.idle.lock();
+            while let Some(conn) = idle.pop_front() {
                 let now = Instant::now();
                 if now.duration_since(conn.last_used) > self.config.idle_timeout
                     || now.duration_since(conn.created_at) > self.config.max_lifetime
@@ -109,25 +124,29 @@ impl ConnectionPool {
     }
 
     pub fn return_connection(&self, id: BackendId, stream: TcpStream) {
-        let mut pools = self.pools.lock();
-        let backend_pool = pools.entry(id).or_insert_with(BackendPool::new);
+        let read = self.pools.read();
+        let backend_pool = read.get(&id).cloned();
+        drop(read);
 
-        backend_pool.active_count.fetch_sub(1, Ordering::Relaxed);
+        if let Some(backend_pool) = backend_pool {
+            backend_pool.active_count.fetch_sub(1, Ordering::Relaxed);
 
-        if backend_pool.idle.len() < self.config.max_idle_per_backend && Self::is_alive(&stream) {
-            backend_pool.idle.push_back(PooledConnection {
-                stream,
-                created_at: Instant::now(),
-                last_used: Instant::now(),
-            });
-            trace!(backend_id = %id, "Returned connection to pool");
+            let mut idle = backend_pool.idle.lock();
+            if idle.len() < self.config.max_idle_per_backend && Self::is_alive(&stream) {
+                idle.push_back(PooledConnection {
+                    stream,
+                    created_at: Instant::now(),
+                    last_used: Instant::now(),
+                });
+                trace!(backend_id = %id, "Returned connection to pool");
+            }
         }
         // Excess connection or dead connection gets closed on drop
     }
 
     pub fn dec_active(&self, id: BackendId) {
-        let pools = self.pools.lock();
-        if let Some(pool) = pools.get(&id) {
+        let read = self.pools.read();
+        if let Some(pool) = read.get(&id) {
             pool.active_count.fetch_sub(1, Ordering::Relaxed);
         }
     }

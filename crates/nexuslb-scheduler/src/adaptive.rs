@@ -48,8 +48,8 @@ impl AdaptiveScheduler {
         let capacity_ratio = conns / weight;
 
         let consec_errors = stats.consecutive_errors() as f64;
-        let total_reqs = stats.snapshot().total_requests;
-        let total_errs = stats.snapshot().total_errors;
+        let total_reqs = stats.total_requests();
+        let total_errs = stats.total_errors();
         let error_rate = if total_reqs > 0 {
             (total_errs as f64 / total_reqs as f64) * 100.0
         } else {
@@ -96,8 +96,7 @@ impl Scheduler for AdaptiveScheduler {
                 best = Some(b);
             } else if (score - min_score).abs() <= 1e-6 {
                 if let Some(prev) = best {
-                    if b.stats().snapshot().total_requests < prev.stats().snapshot().total_requests
-                    {
+                    if b.stats().total_requests() < prev.stats().total_requests() {
                         min_score = score;
                         best = Some(b);
                     }

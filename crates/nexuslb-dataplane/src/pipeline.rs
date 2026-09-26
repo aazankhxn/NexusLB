@@ -36,8 +36,17 @@ impl DataplanePipeline {
             return;
         }
 
-        // 2. Peek initial bytes for protocol detection
-        let mut peek_buf = [0u8; 16];
+        metrics.inc_connections();
+        struct ConnectionGuard(Arc<WorkerMetrics>);
+        impl Drop for ConnectionGuard {
+            fn drop(&mut self) {
+                self.0.dec_connections();
+            }
+        }
+        let _guard = ConnectionGuard(metrics.clone());
+
+        // 2. Peek initial bytes for protocol detection (up to 24 bytes for HTTP/2 preface)
+        let mut peek_buf = [0u8; 24];
         let peek_n = match client.peek(&mut peek_buf).await {
             Ok(n) if n > 0 => n,
             _ => return, // Client disconnected or error

@@ -189,6 +189,27 @@ export default function TermsPage() {
             </div>
           </div>
 
+          {/* Mandatory Attribution & Copyright Card */}
+          <div
+            className="apple-card"
+            style={{
+              padding: "28px 32px",
+              marginBottom: "48px",
+              border: "1px solid rgba(0, 113, 227, 0.3)",
+              background: "rgba(0, 113, 227, 0.08)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+              <ShieldCheck size={20} color="#2997ff" />
+              <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+                Mandatory Attribution Requirement
+              </h3>
+            </div>
+            <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+              NexusLB is engineered and copyrighted by <strong>Aazan Khan</strong> (<a href="https://github.com/aazankhxn" target="_blank" rel="noreferrer" style={{ color: "#2997ff" }}>@aazankhxn</a>). If you use, fork, adapt, or incorporate NexusLB or any part of its source code, architecture, or documentation in any public repository, library, or derivative work, you <strong>must provide prominent credit and attribution</strong> to Aazan Khan with a visible link back to <a href="https://github.com/aazankhxn/NexusLB" target="_blank" rel="noreferrer" style={{ color: "#2997ff" }}>https://github.com/aazankhxn/NexusLB</a>.
+            </p>
+          </div>
+
           {/* Legal Sections */}
           <div
             style={{

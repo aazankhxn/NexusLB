@@ -272,7 +272,7 @@ export default function Footer() {
           color: "var(--text-muted)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-            <span>© {new Date().getFullYear()} NexusLB Project. Released under Apache 2.0 / MIT.</span>
+            <span>© {new Date().getFullYear()} Aazan Khan (@aazankhxn). Released under Apache 2.0 / MIT with Attribution.</span>
             <span style={{ color: "rgba(255,255,255,0.2)" }}>|</span>
             <a href="/privacy" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>Privacy</a>
             <a href="/security" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>Security</a>

@@ -257,7 +257,7 @@ admin:
     headers:
       inject:
         X-Forwarded-Proto: "https"
-        X-Proxied-By: "NexusLB-v0.0.1"
+        X-Proxied-By: "NexusLB-v0.0.2"
       remove:
         - "X-Internal-Debug-Token"`,
           },
@@ -461,7 +461,7 @@ bombardier -c 250 -n 1000000 http://127.0.0.1:8080/`,
             table: {
               headers: ["Competitor", "Throughput (C=50)", "P99 Latency", "Memory (RSS)"],
               rows: [
-                ["NexusLB v0.0.1", "118,872 req/s", "0.41 ms", "7.9 MB"],
+                ["NexusLB v0.0.2", "118,872 req/s", "0.41 ms", "7.9 MB"],
                 ["NGINX v1.31 (Prod)", "109,160 req/s", "1.32 ms", "256.6 MB"],
                 ["UltraBalancer v3", "83,152 req/s", "2.40 ms", "39.5 MB"],
                 ["HAProxy v2.8", "111,200 req/s", "0.98 ms", "24.1 MB"],

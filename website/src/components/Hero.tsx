@@ -19,7 +19,7 @@ export function Hero() {
   const snippets: Record<"start" | "top" | "build", SnippetLine[]> = {
     start: [
       { prompt: true, text: "./target/release/nexuslb start --config nexuslb.yaml" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Starting NexusLB v0.0.1", color: "#86868b" },
+      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Starting NexusLB v0.0.2", color: "#86868b" },
       { text: "2026-09-26T14:10:00Z  INFO nexuslb: I/O Engine: tokio [4 workers assigned]", color: "#86868b" },
       { text: "2026-09-26T14:10:00Z  INFO nexuslb_network: Listening on 0.0.0.0:8080 (SO_REUSEPORT, TCP_NODELAY)", color: "#30d158" },
       { text: "2026-09-26T14:10:00Z  INFO nexuslb_api: Admin REST API listening on 127.0.0.1:9091", color: "#30d158" },
@@ -27,7 +27,7 @@ export function Hero() {
     ],
     top: [
       { prompt: true, text: "./target/release/nexuslb top" },
-      { text: "[NexusLB Operator Dashboard v0.0.1] ──────────────── Up: 14d 02h 19m", color: "#2997ff", bold: true },
+      { text: "[NexusLB Operator Dashboard v0.0.2] ──────────────── Up: 14d 02h 19m", color: "#2997ff", bold: true },
       { text: "Throughput: 112,518.6 req/s   Conns: 250 active   Drop Rate: 0.00%", color: "#30d158" },
       { text: "Latency:    P50: 525 µs   P90: 1.37 ms   P99: 2.66 ms", color: "#f5f5f7" },
       { text: "\nActive Pool: [api-cluster] (Algorithm: Adaptive)", color: "#86868b" },
@@ -38,11 +38,11 @@ export function Hero() {
     ],
     build: [
       { prompt: true, text: "cargo build --release" },
-      { text: "   Compiling nexuslb v0.0.1 (/Users/aazankhan/Personal/NexusLB)", color: "#86868b" },
+      { text: "   Compiling nexuslb v0.0.2 (/Users/aazankhan/Personal/NexusLB)", color: "#86868b" },
       { text: "   LTO optimization: fat, codegen-units: 1, panic: abort", color: "#86868b" },
       { text: "    Finished release [optimized] target(s) in 32.77s", color: "#30d158", bold: true },
       { prompt: true, text: "./target/release/nexuslb version" },
-      { text: "NexusLB v0.0.1 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#2997ff" },
+      { text: "NexusLB v0.0.2 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#2997ff" },
     ],
   };
 

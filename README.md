@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/version-v0.0.1-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/version-v0.0.2--pre-blue.svg" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20MIT-brightgreen.svg" alt="License" /></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable%201.80%2B-orange.svg" alt="Rust" /></a>
   <a href="https://github.com/aazankhxn/NexusLB"><img src="https://img.shields.io/badge/tests-29%20passed-success.svg" alt="Tests" /></a>
@@ -419,7 +419,7 @@ Experience the interactive Apple-designed website:
 - **Visual Configuration Builder:** Interactive YAML generator with iOS switch controls.
 - **In-Depth Documentation Center:** 8 categorized technical modules with live search and table of contents.
 
-Deployed at: **[https://nexuslb.aazankhan.com](https://nexuslb.aazankhan.com)** *(mirror: [https://nexus-lb-eight.vercel.app](https://nexus-lb-eight.vercel.app))*  
+Deployed at: **[https://nexuslb.arqora.work](https://nexuslb.arqora.work)**  
 Local preview: `http://localhost:3000`
 
 ---

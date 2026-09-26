@@ -5,6 +5,20 @@ All notable changes to NexusLB will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.2] - 2026-09-26 (Pre-Release)
+
+### Added & Enhanced
+- **Apple Human Interface UI Portal**:
+  - Implemented sleek Apple SF-style icon toolbar navigation in the web portal and documentation center.
+  - Expanded negative space, section breathing room (130px section padding), and responsive typography scale.
+  - Replaced high-saturation neon gradients with Apple Titanium / Silver materials and subtle Apple Blue accents.
+  - Added dedicated zero-telemetry Privacy Policy (`/privacy`), Security disclosure runbook (`/security`), and Terms of Service with attribution (`/terms`).
+- **Domain & Deployment**:
+  - Production documentation portal deployed to `https://nexuslb.arqora.work`.
+- **Core Engine & Showdown**:
+  - Bumped workspace dependencies to `0.0.2-pre`.
+  - Comprehensive empirical showdown benchmarks vs NGINX, HAProxy, and Envoy across 50, 100, and 250 concurrency.
+
 ## [0.0.1] - 2026-09-26
 
 ### Added

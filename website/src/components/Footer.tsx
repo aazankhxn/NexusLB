@@ -185,7 +185,7 @@ export default function Footer() {
                   border: "1px solid rgba(255, 255, 255, 0.1)",
                 }}
               >
-                v0.0.1
+                v0.0.2-pre
               </span>
             </div>
             <p

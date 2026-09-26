@@ -19,6 +19,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://nexuslb.arqora.work"),
   title: "NexusLB — The Sub-Millisecond Layer 7 Reverse Proxy & Load Balancer",
   description:
     "Engineered in Safe Rust with Tokio async I/O and zero-allocation HTTP streaming. Outperforms NGINX by 1.68x throughput and 3.2x lower P99 tail latency.",
@@ -32,7 +33,14 @@ export const metadata: Metadata = {
     "High Performance",
     "Low Latency",
   ],
-  authors: [{ name: "NexusLB Team" }],
+  authors: [{ name: "Aazan Khan (@aazankhxn)" }],
+  openGraph: {
+    title: "NexusLB — Sub-Millisecond Layer 7 Reverse Proxy",
+    description: "Adaptive load balancing in pure safe Rust. Zero allocation, lock-free, outperforming NGINX.",
+    url: "https://nexuslb.arqora.work",
+    siteName: "NexusLB",
+    type: "website",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },

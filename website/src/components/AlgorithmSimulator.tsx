@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle2, Sliders } from "lucide-react";
+import { Activity, AlertTriangle, Sliders } from "lucide-react";
 
 export function AlgorithmSimulator() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -117,7 +117,7 @@ export function AlgorithmSimulator() {
           targetY: canvas.height - 8,
           progress: 0,
           targetIdx,
-          color: targetIdx === 2 && state.isNode3Degraded ? "#ff453a" : "#00f0ff",
+          color: targetIdx === 2 && state.isNode3Degraded ? "#ff453a" : "#2997ff",
         });
       }
     }, 110);
@@ -138,13 +138,11 @@ export function AlgorithmSimulator() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const state = stateRef.current;
 
-      // Draw connection lines
+      // Draw baseline conduit guide lines
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+      ctx.lineWidth = 1;
       for (let i = 0; i < 4; i++) {
         const targetX = ((i + 0.5) / 4) * canvas.width;
-        ctx.strokeStyle = i === 2 && state.isNode3Degraded
-          ? "rgba(255, 69, 58, 0.25)"
-          : "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(canvas.width / 2, 8);
         ctx.lineTo(targetX, canvas.height - 8);
@@ -160,12 +158,9 @@ export function AlgorithmSimulator() {
         const curY = p.y + (p.targetY - p.y) * p.progress;
 
         ctx.fillStyle = p.color;
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = p.color;
         ctx.beginPath();
         ctx.arc(curX, curY, 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
 
         if (p.progress >= 1) {
           state.packets.splice(i, 1);
@@ -193,32 +188,48 @@ export function AlgorithmSimulator() {
           Watch how NexusLB adaptively steers traffic around degraded backends in real time compared to blind round-robin proxies.
         </p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "28px", maxWidth: "1080px", margin: "0 auto" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+            gap: "32px",
+            maxWidth: "1100px",
+            margin: "0 auto",
+          }}
+        >
           {/* Controls Card */}
-          <div className="apple-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div
+            className="apple-card"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              padding: "36px 30px",
+            }}
+          >
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "18px" }}>
-                <Sliders size={18} color="var(--accent-cyan)" />
-                <span style={{ fontSize: "14px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "22px" }}>
+                <Sliders size={18} color="var(--text-tint)" />
+                <span style={{ fontSize: "13px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "#ffffff" }}>
                   Algorithm Selector
                 </span>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "28px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "32px" }}>
                 <button
                   className={`apple-segment-btn ${algorithm === "adaptive" ? "active" : ""}`}
                   style={{ textAlign: "left", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   onClick={() => setAlgorithm("adaptive")}
                 >
-                  <span>Adaptive Scoring</span>
-                  <span style={{ fontSize: "11px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>Latency+Load</span>
+                  <span style={{ color: algorithm === "adaptive" ? "#ffffff" : "var(--text-secondary)" }}>Adaptive Scoring</span>
+                  <span style={{ fontSize: "11px", color: "var(--text-tint)", fontFamily: "var(--font-mono)" }}>Latency+Load</span>
                 </button>
                 <button
                   className={`apple-segment-btn ${algorithm === "p2c" ? "active" : ""}`}
                   style={{ textAlign: "left", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   onClick={() => setAlgorithm("p2c")}
                 >
-                  <span>Power of Two Choices (P2C)</span>
+                  <span style={{ color: algorithm === "p2c" ? "#ffffff" : "var(--text-secondary)" }}>Power of Two Choices (P2C)</span>
                   <span style={{ fontSize: "11px", color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>O(1)</span>
                 </button>
                 <button
@@ -226,7 +237,7 @@ export function AlgorithmSimulator() {
                   style={{ textAlign: "left", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   onClick={() => setAlgorithm("least_connections")}
                 >
-                  <span>Least Connections</span>
+                  <span style={{ color: algorithm === "least_connections" ? "#ffffff" : "var(--text-secondary)" }}>Least Connections</span>
                   <span style={{ fontSize: "11px", color: "var(--text-tertiary)", fontFamily: "var(--font-mono)" }}>Standard</span>
                 </button>
                 <button
@@ -234,24 +245,31 @@ export function AlgorithmSimulator() {
                   style={{ textAlign: "left", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   onClick={() => setAlgorithm("round_robin")}
                 >
-                  <span>Strict Round Robin</span>
-                  <span style={{ fontSize: "11px", color: "var(--accent-rose)", fontFamily: "var(--font-mono)" }}>Blind</span>
+                  <span style={{ color: algorithm === "round_robin" ? "#ffffff" : "var(--text-secondary)" }}>Strict Round Robin</span>
+                  <span style={{ fontSize: "11px", color: "#ff453a", fontFamily: "var(--font-mono)" }}>Blind</span>
                 </button>
               </div>
             </div>
 
             {/* Chaos Injection */}
-            <div style={{ padding: "18px", borderRadius: "var(--radius-md)", backgroundColor: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+            <div
+              style={{
+                padding: "20px",
+                borderRadius: "var(--radius-md)",
+                backgroundColor: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+              }}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                <AlertTriangle size={16} color={isNode3Degraded ? "var(--accent-rose)" : "var(--accent-amber)"} />
+                <AlertTriangle size={16} color={isNode3Degraded ? "#ff453a" : "#ff9f0a"} />
                 <span style={{ fontSize: "13px", fontWeight: 600, color: "#ffffff" }}>Chaos Injection</span>
               </div>
-              <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "14px" }}>
-                Inject a 950ms GC spike on Node 3. Notice how Adaptive routing stops sending traffic to Node 3, whereas Round Robin keeps sending 25% of requests to it!
+              <p style={{ fontSize: "12.5px", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.5 }}>
+                Inject a 950ms GC spike on Node 3. Notice how Adaptive routing steers traffic away, while Round Robin blindly routes 25% of traffic into the stall.
               </p>
               <button
                 className={`apple-btn apple-btn-sm ${isNode3Degraded ? "apple-btn-primary" : "apple-btn-secondary"}`}
-                style={{ width: "100%", justifyContent: "center" }}
+                style={{ width: "100%", justifyContent: "center", height: "38px" }}
                 onClick={() => setIsNode3Degraded(!isNode3Degraded)}
               >
                 {isNode3Degraded ? "Heal Node 3 (Clear GC Spike)" : "Simulate 950ms GC Pause on Node 3"}
@@ -260,9 +278,17 @@ export function AlgorithmSimulator() {
           </div>
 
           {/* Visual Canvas Stage */}
-          <div className="apple-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div
+            className="apple-card"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              padding: "36px 30px",
+            }}
+          >
             {/* Client Ingress Pill */}
-            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+            <div style={{ textAlign: "center", marginBottom: "20px" }}>
               <div
                 style={{
                   display: "inline-flex",
@@ -270,14 +296,15 @@ export function AlgorithmSimulator() {
                   gap: "8px",
                   padding: "8px 20px",
                   borderRadius: "9999px",
-                  background: "linear-gradient(135deg, #00f0ff, #0071e3)",
-                  color: "#000000",
-                  fontWeight: 700,
+                  background: "rgba(255, 255, 255, 0.08)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  color: "#ffffff",
+                  fontWeight: 600,
                   fontSize: "13px",
-                  boxShadow: "0 0 20px rgba(0, 240, 255, 0.35)",
+                  boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
                 }}
               >
-                <Activity size={14} />
+                <Activity size={14} color="var(--text-tint)" />
                 Client Ingress Stream (120 req/s)
               </div>
             </div>
@@ -286,46 +313,53 @@ export function AlgorithmSimulator() {
             <canvas ref={canvasRef} style={{ width: "100%", height: "180px", display: "block" }} />
 
             {/* 4 Node Cluster Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px", marginTop: "16px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "12px",
+                marginTop: "20px",
+              }}
+            >
               {nodeData.map((node) => {
                 const isDegraded = node.id === 3 && isNode3Degraded;
                 return (
                   <div
                     key={node.id}
                     style={{
-                      padding: "14px 10px",
+                      padding: "16px 12px",
                       borderRadius: "var(--radius-sm)",
-                      backgroundColor: isDegraded ? "rgba(255, 69, 58, 0.12)" : "rgba(255, 255, 255, 0.04)",
-                      border: `1px solid ${isDegraded ? "rgba(255, 69, 58, 0.5)" : "rgba(255, 255, 255, 0.08)"}`,
+                      backgroundColor: isDegraded ? "rgba(255, 69, 58, 0.1)" : "rgba(255, 255, 255, 0.04)",
+                      border: `1px solid ${isDegraded ? "rgba(255, 69, 58, 0.4)" : "rgba(255, 255, 255, 0.08)"}`,
                       textAlign: "center",
                       transition: "all 0.3s var(--spring-snappy)",
                     }}
                   >
-                    <div style={{ fontSize: "11px", fontWeight: 700, fontFamily: "var(--font-mono)", color: "#ffffff", marginBottom: "4px" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)", color: "#ffffff", marginBottom: "6px" }}>
                       node-0{node.id}
                     </div>
                     <span
                       style={{
                         display: "inline-block",
-                        fontSize: "9px",
-                        fontWeight: 700,
-                        padding: "2px 6px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        padding: "2px 7px",
                         borderRadius: "9999px",
                         backgroundColor: isDegraded ? "rgba(255, 69, 58, 0.2)" : "rgba(48, 209, 88, 0.15)",
-                        color: isDegraded ? "var(--accent-rose)" : "var(--accent-emerald)",
+                        color: isDegraded ? "#ff453a" : "#30d158",
                         marginBottom: "8px",
                       }}
                     >
                       {isDegraded ? "SLOW" : "UP"}
                     </span>
                     <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
-                      Lat: <span style={{ color: isDegraded ? "var(--accent-rose)" : "#ffffff", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{node.lat} {isDegraded ? "ms" : "µs"}</span>
+                      Lat: <span style={{ color: isDegraded ? "#ff453a" : "#ffffff", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{node.lat} {isDegraded ? "ms" : "µs"}</span>
                     </div>
                     <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
                       Conns: <span style={{ color: "#ffffff", fontFamily: "var(--font-mono)" }}>{node.conns}</span>
                     </div>
                     <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
-                      Reqs: <span style={{ color: "var(--accent-cyan)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{node.reqs}</span>
+                      Reqs: <span style={{ color: "var(--text-tint)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{node.reqs}</span>
                     </div>
                   </div>
                 );

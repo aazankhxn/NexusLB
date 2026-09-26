@@ -109,24 +109,32 @@ metrics:
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
-            gap: "28px",
-            maxWidth: "1080px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+            gap: "32px",
+            maxWidth: "1100px",
             margin: "0 auto",
           }}
         >
           {/* Controls Form Card */}
-          <div className="apple-card" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Sliders size={18} color="var(--accent-cyan)" />
-              <span style={{ fontSize: "14px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#ffffff" }}>
+          <div
+            className="apple-card"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "22px",
+              padding: "36px 30px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <Sliders size={18} color="var(--text-tint)" />
+              <span style={{ fontSize: "13px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "#ffffff" }}>
                 Runtime Settings
               </span>
             </div>
 
             {/* Port */}
             <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "6px", textTransform: "uppercase" }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Listen Port
               </label>
               <input
@@ -135,9 +143,9 @@ metrics:
                 onChange={(e) => setPort(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "10px 14px",
+                  padding: "11px 14px",
                   borderRadius: "var(--radius-sm)",
-                  backgroundColor: "rgba(0, 0, 0, 0.4)",
+                  backgroundColor: "rgba(0, 0, 0, 0.45)",
                   border: "1px solid rgba(255, 255, 255, 0.12)",
                   color: "#ffffff",
                   fontSize: "14px",
@@ -149,7 +157,7 @@ metrics:
 
             {/* Algorithm */}
             <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "6px", textTransform: "uppercase" }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Scheduling Algorithm
               </label>
               <select
@@ -157,9 +165,9 @@ metrics:
                 onChange={(e) => setAlgo(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "10px 14px",
+                  padding: "11px 14px",
                   borderRadius: "var(--radius-sm)",
-                  backgroundColor: "rgba(0, 0, 0, 0.4)",
+                  backgroundColor: "rgba(0, 0, 0, 0.45)",
                   border: "1px solid rgba(255, 255, 255, 0.12)",
                   color: "#ffffff",
                   fontSize: "14px",
@@ -178,7 +186,7 @@ metrics:
 
             {/* Workers */}
             <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "6px", textTransform: "uppercase" }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-tertiary)", marginBottom: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Worker Threads
               </label>
               <input
@@ -187,9 +195,9 @@ metrics:
                 onChange={(e) => setWorkers(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "10px 14px",
+                  padding: "11px 14px",
                   borderRadius: "var(--radius-sm)",
-                  backgroundColor: "rgba(0, 0, 0, 0.4)",
+                  backgroundColor: "rgba(0, 0, 0, 0.45)",
                   border: "1px solid rgba(255, 255, 255, 0.12)",
                   color: "#ffffff",
                   fontSize: "14px",
@@ -200,11 +208,11 @@ metrics:
             </div>
 
             {/* Toggles */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px", paddingTop: "8px", borderTop: "1px solid rgba(255, 255, 255, 0.08)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", paddingTop: "12px", borderTop: "1px solid rgba(255, 255, 255, 0.08)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#ffffff" }}>TLS Termination & SNI</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>Includes HTTP-&gt;HTTPS 301 redirect</div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#ffffff" }}>TLS Termination & SNI</div>
+                  <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>Includes HTTP-&gt;HTTPS 301 redirect</div>
                 </div>
                 <label className="ios-switch">
                   <input type="checkbox" checked={tlsEnabled} onChange={(e) => setTlsEnabled(e.target.checked)} />
@@ -214,8 +222,8 @@ metrics:
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#ffffff" }}>Route JWT Authentication</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>Validates Bearer tokens on /api/*</div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#ffffff" }}>Route JWT Authentication</div>
+                  <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>Validates Bearer tokens on /api/*</div>
                 </div>
                 <label className="ios-switch">
                   <input type="checkbox" checked={jwtAuth} onChange={(e) => setJwtAuth(e.target.checked)} />
@@ -225,8 +233,8 @@ metrics:
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#ffffff" }}>Sliding-Window Rate Limiting</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>120,000 global, 1,500/client RPS</div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#ffffff" }}>Sliding-Window Rate Limiting</div>
+                  <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>120,000 global, 1,500/client RPS</div>
                 </div>
                 <label className="ios-switch">
                   <input type="checkbox" checked={rateLimit} onChange={(e) => setRateLimit(e.target.checked)} />
@@ -236,8 +244,8 @@ metrics:
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#ffffff" }}>Non-Blocking JSON Logging</div>
-                  <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>128k ring buffer background thread</div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#ffffff" }}>Non-Blocking JSON Logging</div>
+                  <div style={{ fontSize: "11.5px", color: "var(--text-tertiary)" }}>128k ring buffer background thread</div>
                 </div>
                 <label className="ios-switch">
                   <input type="checkbox" checked={accessLog} onChange={(e) => setAccessLog(e.target.checked)} />
@@ -250,9 +258,9 @@ metrics:
           {/* Generated Preview Card */}
           <div
             style={{
-              backgroundColor: "#0d0f17",
+              backgroundColor: "#0d0e14",
               borderRadius: "var(--radius-lg)",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
               boxShadow: "var(--shadow-apple)",
               display: "flex",
               flexDirection: "column",
@@ -264,13 +272,13 @@ metrics:
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                padding: "14px 20px",
+                padding: "16px 22px",
                 backgroundColor: "rgba(255, 255, 255, 0.03)",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Code2 size={16} color="var(--accent-cyan)" />
+                <Code2 size={16} color="var(--text-tint)" />
                 <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>
                   nexuslb.yaml
                 </span>
@@ -279,21 +287,21 @@ metrics:
                 className="apple-btn apple-btn-secondary apple-btn-sm"
                 onClick={copyToClipboard}
               >
-                {copied ? <Check size={14} color="var(--accent-emerald)" /> : <Copy size={14} />}
+                {copied ? <Check size={14} color="#30d158" /> : <Copy size={14} />}
                 {copied ? "Copied!" : "Copy YAML"}
               </button>
             </div>
 
             <pre
               style={{
-                padding: "24px",
+                padding: "26px",
                 fontFamily: "var(--font-mono)",
                 fontSize: "12.5px",
-                lineHeight: 1.6,
-                color: "#9cdcfe",
+                lineHeight: 1.65,
+                color: "#e5e5ea",
                 overflowY: "auto",
                 overflowX: "auto",
-                maxHeight: "520px",
+                maxHeight: "540px",
                 whiteSpace: "pre",
               }}
             >

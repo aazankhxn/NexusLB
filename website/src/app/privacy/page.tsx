@@ -66,7 +66,7 @@ export default function PrivacyPage() {
 
       <Navbar />
 
-      <main style={{ position: "relative", zIndex: 1, padding: "48px 24px 96px" }}>
+      <main style={{ position: "relative", zIndex: 1, padding: "64px 28px 120px" }}>
         <div style={{ maxWidth: 860, margin: "0 auto" }}>
           {/* Back Navigation */}
           <div style={{ marginBottom: "32px" }}>

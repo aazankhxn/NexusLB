@@ -10,7 +10,7 @@ import Footer from "@/components/Footer";
 export default function Home() {
   return (
     <div style={{ minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
-      {/* Dynamic Background Glows */}
+      {/* Dynamic Background Glows (Apple Restrained Ambient Sheen) */}
       <div
         style={{
           position: "fixed",
@@ -19,8 +19,8 @@ export default function Home() {
           transform: "translateX(-50%)",
           width: "min(900px, 100vw)",
           height: "600px",
-          background: "radial-gradient(circle, rgba(0, 113, 227, 0.15) 0%, rgba(0, 240, 255, 0.04) 50%, transparent 75%)",
-          filter: "blur(90px)",
+          background: "radial-gradient(circle, rgba(41, 151, 255, 0.09) 0%, transparent 75%)",
+          filter: "blur(100px)",
           pointerEvents: "none",
           zIndex: 0,
         }}
@@ -32,8 +32,8 @@ export default function Home() {
           right: "-100px",
           width: "min(600px, 100vw)",
           height: "600px",
-          background: "radial-gradient(circle, rgba(191, 90, 242, 0.08) 0%, transparent 70%)",
-          filter: "blur(100px)",
+          background: "radial-gradient(circle, rgba(94, 92, 230, 0.05) 0%, transparent 70%)",
+          filter: "blur(110px)",
           pointerEvents: "none",
           zIndex: 0,
         }}

@@ -19,18 +19,18 @@ export function Hero() {
   const snippets: Record<"start" | "top" | "build", SnippetLine[]> = {
     start: [
       { prompt: true, text: "./target/release/nexuslb start --config nexuslb.yaml" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Starting NexusLB v0.0.1", color: "#6e6e73" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: I/O Engine: tokio [4 workers assigned]", color: "#6e6e73" },
+      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Starting NexusLB v0.0.1", color: "#86868b" },
+      { text: "2026-09-26T14:10:00Z  INFO nexuslb: I/O Engine: tokio [4 workers assigned]", color: "#86868b" },
       { text: "2026-09-26T14:10:00Z  INFO nexuslb_network: Listening on 0.0.0.0:8080 (SO_REUSEPORT, TCP_NODELAY)", color: "#30d158" },
       { text: "2026-09-26T14:10:00Z  INFO nexuslb_api: Admin REST API listening on 127.0.0.1:9091", color: "#30d158" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Ready for production traffic. Press Ctrl+C to terminate.", color: "#00f0ff" },
+      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Ready for production traffic. Press Ctrl+C to terminate.", color: "#2997ff" },
     ],
     top: [
       { prompt: true, text: "./target/release/nexuslb top" },
       { text: "[NexusLB Operator Dashboard v0.0.1] ──────────────── Up: 14d 02h 19m", color: "#2997ff", bold: true },
       { text: "Throughput: 112,518.6 req/s   Conns: 250 active   Drop Rate: 0.00%", color: "#30d158" },
       { text: "Latency:    P50: 525 µs   P90: 1.37 ms   P99: 2.66 ms", color: "#f5f5f7" },
-      { text: "\nActive Pool: [api-cluster] (Algorithm: Adaptive)", color: "#a1a1a6" },
+      { text: "\nActive Pool: [api-cluster] (Algorithm: Adaptive)", color: "#86868b" },
       { text: "  ● srv-1 [10.0.1.10:8080]  UP  Load: 24%  Conns: 58   Lat: 480µs  Score: 1.12", color: "#30d158" },
       { text: "  ● srv-2 [10.0.1.11:8080]  UP  Load: 26%  Conns: 64   Lat: 510µs  Score: 1.18", color: "#30d158" },
       { text: "  ● srv-3 [10.0.1.12:8080]  UP  Load: 25%  Conns: 62   Lat: 495µs  Score: 1.15", color: "#30d158" },
@@ -38,31 +38,38 @@ export function Hero() {
     ],
     build: [
       { prompt: true, text: "cargo build --release" },
-      { text: "   Compiling nexuslb v0.0.1 (/Users/aazankhan/Personal/NexusLB)", color: "#6e6e73" },
-      { text: "   LTO optimization: fat, codegen-units: 1, panic: abort", color: "#6e6e73" },
+      { text: "   Compiling nexuslb v0.0.1 (/Users/aazankhan/Personal/NexusLB)", color: "#86868b" },
+      { text: "   LTO optimization: fat, codegen-units: 1, panic: abort", color: "#86868b" },
       { text: "    Finished release [optimized] target(s) in 32.77s", color: "#30d158", bold: true },
       { prompt: true, text: "./target/release/nexuslb version" },
-      { text: "NexusLB v0.0.1 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#00f0ff" },
-    ]
+      { text: "NexusLB v0.0.1 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#2997ff" },
+    ],
   };
 
   const copyCode = () => {
-    const raw = snippets[terminalTab].map(s => s.prompt ? `$ ${s.text}` : s.text).join("\n");
+    const raw = snippets[terminalTab].map((s) => (s.prompt ? `$ ${s.text}` : s.text)).join("\n");
     navigator.clipboard.writeText(raw);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <section style={{ paddingTop: "56px", paddingBottom: "80px", textAlign: "center" }}>
+    <section
+      style={{
+        paddingTop: "76px",
+        paddingBottom: "110px",
+        textAlign: "center",
+        position: "relative",
+      }}
+    >
       <div className="container">
-        {/* Official 3D Ribbon Logo Emblem */}
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
+        {/* Official 3D Ribbon Logo Emblem with subtle Apple halo */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "28px" }}>
           <div
             style={{
               position: "relative",
-              width: "92px",
-              height: "92px",
+              width: "88px",
+              height: "88px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -71,40 +78,41 @@ export function Hero() {
             <div
               style={{
                 position: "absolute",
-                inset: -6,
+                inset: -8,
                 borderRadius: "32px",
-                background: "radial-gradient(circle, rgba(0, 113, 227, 0.45) 0%, rgba(255, 149, 0, 0.25) 50%, transparent 75%)",
-                filter: "blur(20px)",
+                background: "radial-gradient(circle, rgba(41, 151, 255, 0.2) 0%, rgba(255, 255, 255, 0.05) 50%, transparent 75%)",
+                filter: "blur(18px)",
                 zIndex: 0,
               }}
             />
             <Image
               src="/nexuslb.png"
               alt="NexusLB Official Logo"
-              width={92}
-              height={92}
+              width={88}
+              height={88}
               priority
               style={{
                 position: "relative",
                 zIndex: 1,
                 objectFit: "contain",
-                filter: "drop-shadow(0 14px 28px rgba(0, 0, 0, 0.6))",
+                filter: "drop-shadow(0 16px 32px rgba(0, 0, 0, 0.6))",
               }}
             />
           </div>
         </div>
-        {/* Apple Dynamic Island Badge */}
+
+        {/* Apple Status Capsule Badge */}
         <div
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: "10px",
+            gap: "9px",
             padding: "6px 16px",
             borderRadius: "9999px",
-            background: "rgba(255, 255, 255, 0.06)",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
-            boxShadow: "0 2px 10px rgba(0, 0, 0, 0.2)",
-            marginBottom: "28px",
+            background: "rgba(255, 255, 255, 0.05)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            boxShadow: "0 2px 12px rgba(0, 0, 0, 0.25)",
+            marginBottom: "32px",
           }}
         >
           <div
@@ -112,16 +120,16 @@ export function Hero() {
               width: "7px",
               height: "7px",
               borderRadius: "50%",
-              backgroundColor: "var(--accent-cyan)",
-              boxShadow: "0 0 8px var(--accent-cyan)",
+              backgroundColor: "#30d158",
+              boxShadow: "0 0 6px rgba(48, 209, 88, 0.6)",
             }}
           />
           <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-secondary)" }}>
-            Engineered in Pure Safe Rust &bull; 0 Buffer Overflows
+            Engineered in Pure Safe Rust &bull; Zero Buffer Overflows
           </span>
         </div>
 
-        {/* Master Display Typography */}
+        {/* Master Apple Display Typography */}
         <h1
           style={{
             fontSize: "clamp(42px, 6.5vw, 76px)",
@@ -129,14 +137,14 @@ export function Hero() {
             letterSpacing: "-0.035em",
             lineHeight: 1.08,
             maxWidth: "960px",
-            margin: "0 auto 24px",
+            margin: "0 auto 28px",
             color: "#ffffff",
           }}
         >
           Next-Generation <br />
           <span
             style={{
-              background: "linear-gradient(135deg, #ffffff 30%, #00f0ff 75%, #bf5af2 100%)",
+              background: "linear-gradient(180deg, #ffffff 40%, #86868b 100%)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}
@@ -150,12 +158,12 @@ export function Hero() {
             fontSize: "clamp(17px, 2.2vw, 21px)",
             color: "var(--text-secondary)",
             maxWidth: "760px",
-            margin: "0 auto 40px",
-            lineHeight: 1.5,
+            margin: "0 auto 48px",
+            lineHeight: 1.55,
             fontWeight: 400,
           }}
         >
-          Out-delivers NGINX with <strong>118,872 req/s</strong> throughput, sub-millisecond median latencies, and consumes <strong>88.6% less memory</strong> with atomic zero-downtime hot reloads.
+          Out-delivers NGINX with <strong style={{ color: "#ffffff" }}>118,872 req/s</strong> throughput, sub-millisecond median latencies, and consumes <strong style={{ color: "#ffffff" }}>88.6% less memory</strong> with atomic zero-downtime hot reloads.
         </p>
 
         {/* Primary CTA Buttons */}
@@ -166,83 +174,91 @@ export function Hero() {
             justifyContent: "center",
             gap: "16px",
             flexWrap: "wrap",
-            marginBottom: "60px",
+            marginBottom: "72px",
           }}
         >
-          <a href="#showdown" className="apple-btn apple-btn-primary" style={{ padding: "13px 26px", fontSize: "15px" }}>
+          <a
+            href="#showdown"
+            className="apple-btn apple-btn-primary"
+            style={{ padding: "13px 28px", fontSize: "15px" }}
+          >
             Explore Benchmark Showdown
             <ArrowRight size={16} />
           </a>
-          <Link href="/docs" className="apple-btn apple-btn-secondary" style={{ padding: "13px 26px", fontSize: "15px" }}>
+          <Link
+            href="/docs"
+            className="apple-btn apple-btn-secondary"
+            style={{ padding: "13px 28px", fontSize: "15px" }}
+          >
             Read Documentation
           </Link>
         </div>
 
-        {/* 4 Apple-style Stat Cards */}
+        {/* 4 Apple-style Hardware Specs Stat Cards */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-            gap: "16px",
-            marginBottom: "60px",
+            gap: "20px",
+            marginBottom: "72px",
           }}
         >
-          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-cyan)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <div className="apple-card" style={{ padding: "28px 24px", textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-tint)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 Peak Throughput
               </span>
-              <Zap size={18} color="var(--accent-cyan)" />
+              <Zap size={18} color="var(--text-tint)" />
             </div>
-            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
               118,872
             </div>
-            <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
-              Requests/second (+43% vs UltraBalancer)
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
+              Requests/sec (+43% vs UltraBalancer)
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-emerald)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <div className="apple-card" style={{ padding: "28px 24px", textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "#30d158", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 Median Latency
               </span>
-              <Flame size={18} color="var(--accent-emerald)" />
+              <Flame size={18} color="#30d158" />
             </div>
-            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
               525 µs
             </div>
-            <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
-              20.2% lower latency than NGINX Production
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
+              20.2% lower latency than NGINX
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <div className="apple-card" style={{ padding: "28px 24px", textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "#af52de", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 Resident RAM
               </span>
-              <Layers size={18} color="var(--accent-purple)" />
+              <Layers size={18} color="#af52de" />
             </div>
-            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
               2.6 MB
             </div>
-            <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
               -88.6% leaner than NGINX (8 workers)
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-blue)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <div className="apple-card" style={{ padding: "28px 24px", textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-tint)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 Hot Reload Time
               </span>
-              <Shield size={18} color="var(--accent-blue)" />
+              <Shield size={18} color="var(--text-tint)" />
             </div>
-            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
               &lt; 1 µs
             </div>
-            <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
               Lock-free ArcSwap zero dropped requests
             </div>
           </div>
@@ -251,11 +267,11 @@ export function Hero() {
         {/* Apple macOS Terminal Preview */}
         <div
           style={{
-            maxWidth: "920px",
+            maxWidth: "940px",
             margin: "0 auto",
-            backgroundColor: "#0d0f17",
+            backgroundColor: "#0d0e14",
             borderRadius: "var(--radius-md)",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
             boxShadow: "0 24px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
             overflow: "hidden",
             textAlign: "left",
@@ -267,14 +283,14 @@ export function Hero() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              padding: "10px 16px",
+              padding: "12px 18px",
               backgroundColor: "rgba(255, 255, 255, 0.03)",
-              borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+              borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
               flexWrap: "wrap",
-              gap: "10px",
+              gap: "12px",
             }}
           >
-            <div style={{ display: "flex", gap: "7px", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#ff5f56" }} />
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#ffbd2e" }} />
               <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#27c93f" }} />
@@ -313,7 +329,7 @@ export function Hero() {
               style={{
                 background: "none",
                 border: "none",
-                color: copied ? "var(--accent-emerald)" : "var(--text-tertiary)",
+                color: copied ? "#30d158" : "var(--text-tertiary)",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -331,17 +347,24 @@ export function Hero() {
           {/* Terminal Console */}
           <div
             style={{
-              padding: "24px",
+              padding: "26px",
               fontFamily: "var(--font-mono)",
               fontSize: "13px",
-              lineHeight: 1.7,
+              lineHeight: 1.75,
               minHeight: "220px",
               overflowX: "auto",
               color: "#c9d1d9",
             }}
           >
             {snippets[terminalTab].map((line, idx) => (
-              <div key={idx} style={{ color: line.color || "#f5f5f7", fontWeight: line.bold ? 700 : 400, whiteSpace: "pre" }}>
+              <div
+                key={idx}
+                style={{
+                  color: line.color || "#f5f5f7",
+                  fontWeight: line.bold ? 700 : 400,
+                  whiteSpace: "pre",
+                }}
+              >
                 {line.prompt && <span style={{ color: "#30d158", marginRight: "10px" }}>$</span>}
                 {line.text}
               </div>

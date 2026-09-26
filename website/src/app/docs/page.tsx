@@ -20,8 +20,8 @@ export default function DocsPage() {
           transform: "translateX(-50%)",
           width: "900px",
           height: "500px",
-          background: "radial-gradient(circle, rgba(0, 113, 227, 0.12) 0%, rgba(0, 240, 255, 0.03) 50%, transparent 75%)",
-          filter: "blur(90px)",
+          background: "radial-gradient(circle, rgba(41, 151, 255, 0.09) 0%, transparent 75%)",
+          filter: "blur(100px)",
           pointerEvents: "none",
           zIndex: 0,
         }}
@@ -29,7 +29,7 @@ export default function DocsPage() {
 
       <Navbar />
 
-      <main style={{ position: "relative", zIndex: 1, paddingTop: "32px" }}>
+      <main style={{ position: "relative", zIndex: 1, paddingTop: "48px" }}>
         <DocsViewer />
       </main>
 

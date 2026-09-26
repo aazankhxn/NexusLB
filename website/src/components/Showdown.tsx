@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Shield, Zap, Cpu, BarChart2 } from "lucide-react";
 
 export function Showdown() {
   const [competitor, setCompetitor] = useState<"nginx" | "ultrabalancer" | "haproxy" | "envoy">("nginx");
@@ -13,29 +12,29 @@ export function Showdown() {
       "50": { nexusRps: 112518, compRps: 109160, nexusLat: 420, compLat: 580, nexusMem: 2.6, compMem: 22.7 },
       "100": { nexusRps: 111470, compRps: 107363, nexusLat: 525, compLat: 658, nexusMem: 2.6, compMem: 22.7 },
       "250": { nexusRps: 109500, compRps: 107560, nexusLat: 890, compLat: 1120, nexusMem: 2.6, compMem: 22.7 },
-      notes: "NGINX uses multi-process worker pools (C codebase) with byte-by-byte parsing."
+      notes: "NGINX uses multi-process worker pools (C codebase) with byte-by-byte parsing.",
     },
     ultrabalancer: {
       name: "UltraBalancer v3.0.0",
       "50": { nexusRps: 118872, compRps: 83152, nexusLat: 720, compLat: 990, nexusMem: 12.3, compMem: 36.4 },
       "100": { nexusRps: 101329, compRps: 78296, nexusLat: 897, compLat: 1137, nexusMem: 12.3, compMem: 36.4 },
       "250": { nexusRps: 102589, compRps: 79764, nexusLat: 1280, compLat: 1780, nexusMem: 12.3, compMem: 36.4 },
-      notes: "UltraBalancer uses standard Tokio with dynamic allocations on connection dispatch."
+      notes: "UltraBalancer uses standard Tokio with dynamic allocations on connection dispatch.",
     },
     haproxy: {
       name: "HAProxy v2.8",
       "50": { nexusRps: 112518, compRps: 104200, nexusLat: 525, compLat: 610, nexusMem: 2.6, compMem: 18.5 },
       "100": { nexusRps: 111470, compRps: 102800, nexusLat: 610, compLat: 720, nexusMem: 2.6, compMem: 18.5 },
       "250": { nexusRps: 109500, compRps: 99400, nexusLat: 940, compLat: 1250, nexusMem: 2.6, compMem: 18.5 },
-      notes: "HAProxy is an established C-based proxy with complex Lua configuration requirements."
+      notes: "HAProxy is an established C-based proxy with complex Lua configuration requirements.",
     },
     envoy: {
       name: "Envoy Proxy v1.30",
       "50": { nexusRps: 112518, compRps: 88500, nexusLat: 525, compLat: 950, nexusMem: 2.6, compMem: 68.0 },
       "100": { nexusRps: 111470, compRps: 85200, nexusLat: 610, compLat: 1180, nexusMem: 2.6, compMem: 72.0 },
       "250": { nexusRps: 109500, compRps: 82100, nexusLat: 940, compLat: 1650, nexusMem: 2.6, compMem: 85.0 },
-      notes: "Envoy is heavy C++ microservice proxy with higher baseline memory requirements."
-    }
+      notes: "Envoy is heavy C++ microservice proxy with higher baseline memory requirements.",
+    },
   };
 
   const current = data[competitor][concurrency];
@@ -67,7 +66,14 @@ export function Showdown() {
         </p>
 
         {/* Master Comparison Card */}
-        <div className="apple-card" style={{ maxWidth: "1000px", margin: "0 auto" }}>
+        <div
+          className="apple-card"
+          style={{
+            maxWidth: "1020px",
+            margin: "0 auto",
+            padding: "44px 38px",
+          }}
+        >
           {/* Controls Bar */}
           <div
             style={{
@@ -75,10 +81,10 @@ export function Showdown() {
               alignItems: "center",
               justifyContent: "space-between",
               flexWrap: "wrap",
-              gap: "18px",
-              paddingBottom: "28px",
+              gap: "20px",
+              paddingBottom: "32px",
               borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-              marginBottom: "32px",
+              marginBottom: "36px",
             }}
           >
             {/* Competitor Picker */}
@@ -146,25 +152,38 @@ export function Showdown() {
           </div>
 
           {/* Metric 1: Throughput */}
-          <div style={{ marginBottom: "36px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ marginBottom: "40px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: "18px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
               <div>
-                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Throughput (Requests / Second)</span>
-                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Higher is better</span>
+                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>
+                  Throughput (Requests / Second)
+                </span>
+                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>
+                  Higher is better
+                </span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-emerald)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#30d158", fontFamily: "var(--font-mono)" }}>
                 NexusLB +{rpsDiff}% faster
               </span>
             </div>
 
             {/* NexusLB item */}
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-cyan)", display: "inline-block" }} />
+            <div style={{ marginBottom: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-tint)", display: "inline-block" }} />
                   NexusLB v0.0.1
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-cyan)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-tint)" }}>
                   {current.nexusRps.toLocaleString()} req/s
                 </span>
               </div>
@@ -173,7 +192,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${nexusRpsPct}%`,
-                    background: "linear-gradient(90deg, #00f0ff, #0071e3)",
+                    background: "linear-gradient(90deg, #2997ff, #0071e3)",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}
@@ -183,9 +202,9 @@ export function Showdown() {
 
             {/* Competitor item */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#48484a", display: "inline-block" }} />
                   {compName}
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -197,7 +216,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${compRpsPct}%`,
-                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    background: "#48484a",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}
@@ -207,25 +226,38 @@ export function Showdown() {
           </div>
 
           {/* Metric 2: Median Latency */}
-          <div style={{ marginBottom: "36px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ marginBottom: "40px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: "18px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
               <div>
-                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Median Latency P50 (Microseconds)</span>
-                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Lower is better</span>
+                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>
+                  Median Latency P50 (Microseconds)
+                </span>
+                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>
+                  Lower is better
+                </span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-tint)", fontFamily: "var(--font-mono)" }}>
                 NexusLB {latDiff}% lower latency
               </span>
             </div>
 
             {/* NexusLB item */}
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-cyan)", display: "inline-block" }} />
+            <div style={{ marginBottom: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-tint)", display: "inline-block" }} />
                   NexusLB v0.0.1
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-cyan)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-tint)" }}>
                   {current.nexusLat} µs
                 </span>
               </div>
@@ -234,7 +266,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${nexusLatPct}%`,
-                    background: "linear-gradient(90deg, #00f0ff, #5e5ce6)",
+                    background: "linear-gradient(90deg, #2997ff, #5e5ce6)",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}
@@ -244,9 +276,9 @@ export function Showdown() {
 
             {/* Competitor item */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#48484a", display: "inline-block" }} />
                   {compName}
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -258,7 +290,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${compLatPct}%`,
-                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    background: "#48484a",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}
@@ -269,24 +301,37 @@ export function Showdown() {
 
           {/* Metric 3: Resident Memory */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: "18px",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
               <div>
-                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>Resident Memory Footprint RSS (MB)</span>
-                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>Lower is better</span>
+                <span style={{ fontSize: "15px", fontWeight: 600, color: "#ffffff" }}>
+                  Resident Memory Footprint RSS (MB)
+                </span>
+                <span style={{ fontSize: "12px", color: "var(--text-tertiary)", marginLeft: "8px" }}>
+                  Lower is better
+                </span>
               </div>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-purple)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#af52de", fontFamily: "var(--font-mono)" }}>
                 NexusLB {memDiff}% leaner
               </span>
             </div>
 
             {/* NexusLB item */}
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-purple)", display: "inline-block" }} />
+            <div style={{ marginBottom: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#af52de", display: "inline-block" }} />
                   NexusLB v0.0.1
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--accent-purple)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "#af52de" }}>
                   {current.nexusMem} MB
                 </span>
               </div>
@@ -295,7 +340,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${nexusMemPct}%`,
-                    background: "linear-gradient(90deg, #bf5af2, #ff375f)",
+                    background: "linear-gradient(90deg, #af52de, #5e5ce6)",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}
@@ -305,9 +350,9 @@ export function Showdown() {
 
             {/* Competitor item */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontSize: "13px" }}>
-                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#64748b", display: "inline-block" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
+                <span style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "7px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#48484a", display: "inline-block" }} />
                   {compName}
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -319,7 +364,7 @@ export function Showdown() {
                   style={{
                     height: "100%",
                     width: `${compMemPct}%`,
-                    background: "linear-gradient(90deg, #475569, #64748b)",
+                    background: "#48484a",
                     borderRadius: "9999px",
                     transition: "width 0.5s var(--spring-snappy)",
                   }}

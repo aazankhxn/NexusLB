@@ -19,8 +19,8 @@ pub const LATENCY_BUCKETS_MICROS: [u64; 14] = [
     5_000_000, // 5s
 ];
 
-/// Cacheline-padded per-worker metrics to prevent false-sharing on multi-core systems
-#[repr(align(64))]
+/// Cacheline-padded per-worker metrics to prevent false-sharing on multi-core systems (128-byte cachelines on Apple Silicon)
+#[repr(align(128))]
 pub struct WorkerMetrics {
     pub worker_id: usize,
     pub requests_total: AtomicU64,
@@ -113,12 +113,20 @@ impl WorkerMetrics {
     #[inline(always)]
     pub fn record_latency(&self, duration: Duration) {
         let micros = duration.as_micros() as u64;
-        self.latency_sum_micros.fetch_add(micros, Ordering::Relaxed);
-        self.latency_count.fetch_add(1, Ordering::Relaxed);
 
-        for (i, &bucket) in LATENCY_BUCKETS_MICROS.iter().enumerate() {
-            if micros <= bucket {
-                self.latency_buckets[i].fetch_add(1, Ordering::Relaxed);
+        // Sample 1-in-4 requests for histogram to reduce multi-core cacheline contention.
+        // At >100k rps this still provides statistically accurate percentiles.
+        // Use the low bits of latency_count as a cheap counter to avoid an extra atomic load.
+        let count = self.latency_count.fetch_add(1, Ordering::Relaxed);
+        self.latency_sum_micros.fetch_add(micros, Ordering::Relaxed);
+
+        if (count & 0x03) == 0 {
+            // Increment ONLY the first matching bucket (1 atomic operation instead of 14)
+            for (i, &bucket) in LATENCY_BUCKETS_MICROS.iter().enumerate() {
+                if micros <= bucket {
+                    self.latency_buckets[i].fetch_add(4, Ordering::Relaxed);
+                    return;
+                }
             }
         }
     }
@@ -251,11 +259,13 @@ impl GlobalMetrics {
 
         out.push_str("# HELP nexuslb_request_duration_seconds Request duration histogram\n");
         out.push_str("# TYPE nexuslb_request_duration_seconds histogram\n");
+        let mut cumulative_count = 0u64;
         for (i, &bucket) in LATENCY_BUCKETS_MICROS.iter().enumerate() {
+            cumulative_count += agg.latency_buckets[i];
             let secs = bucket as f64 / 1_000_000.0;
             out.push_str(&format!(
                 "nexuslb_request_duration_seconds_bucket{{le=\"{:.4}\"}} {}\n",
-                secs, agg.latency_buckets[i]
+                secs, cumulative_count
             ));
         }
         out.push_str(&format!(
@@ -270,6 +280,16 @@ impl GlobalMetrics {
             "nexuslb_request_duration_seconds_count {}\n",
             agg.latency_count
         ));
+
+        out.push_str("# HELP nexuslb_worker_requests_total Requests per worker\n");
+        out.push_str("# TYPE nexuslb_worker_requests_total counter\n");
+        for w in &self.workers {
+            out.push_str(&format!(
+                "nexuslb_worker_requests_total{{worker=\"{}\"}} {}\n",
+                w.worker_id,
+                w.requests_total.load(Ordering::Relaxed)
+            ));
+        }
 
         out
     }

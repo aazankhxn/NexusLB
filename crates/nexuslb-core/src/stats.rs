@@ -4,6 +4,7 @@ use std::time::Duration;
 
 /// High-performance lock-free atomic statistics tracking for a backend.
 /// Designed for zero-contention atomic updates in the request hot path.
+#[repr(align(128))]
 #[derive(Debug)]
 pub struct AtomicBackendStats {
     active_connections: AtomicU64,
@@ -97,63 +98,61 @@ impl AtomicBackendStats {
 
     #[inline(always)]
     pub fn record_success(&self, latency: Duration, bytes_in: u64, bytes_out: u64) {
-        self.total_responses.fetch_add(1, Ordering::Relaxed);
-        self.consecutive_errors.store(0, Ordering::Relaxed);
-        self.consecutive_successes.fetch_add(1, Ordering::Relaxed);
-        self.bytes_received.fetch_add(bytes_in, Ordering::Relaxed);
-        self.bytes_sent.fetch_add(bytes_out, Ordering::Relaxed);
+        let resp_count = self.total_responses.fetch_add(1, Ordering::Relaxed);
+
+        if self.consecutive_errors.load(Ordering::Relaxed) != 0 {
+            self.consecutive_errors.store(0, Ordering::Relaxed);
+        }
+        // Only update consecutive successes if not yet fully healthy (prevents constant write-invalidation)
+        if self.consecutive_successes.load(Ordering::Relaxed) < 10 {
+            self.consecutive_successes.fetch_add(1, Ordering::Relaxed);
+        }
 
         let micros = latency.as_micros() as u64;
-        self.latency_sum_micros.fetch_add(micros, Ordering::Relaxed);
-        self.latency_count.fetch_add(1, Ordering::Relaxed);
 
-        // Update min/max latency lock-free
-        let _ = self.min_latency_micros.fetch_min(micros, Ordering::Relaxed);
-        let _ = self.max_latency_micros.fetch_max(micros, Ordering::Relaxed);
+        // Sample metrics (1 in 8 requests) to eliminate multi-core cacheline contention
+        if (resp_count & 0x07) == 0 {
+            self.bytes_received
+                .fetch_add(bytes_in * 8, Ordering::Relaxed);
+            self.bytes_sent.fetch_add(bytes_out * 8, Ordering::Relaxed);
+            self.latency_sum_micros
+                .fetch_add(micros * 8, Ordering::Relaxed);
+            self.latency_count.fetch_add(8, Ordering::Relaxed);
 
-        // Update EWMA: alpha = 0.2 (represented as integer arithmetic: ewma = (4 * ewma + micros) / 5)
-        let mut current_ewma = self.ewma_latency_micros.load(Ordering::Relaxed);
-        loop {
+            // Guard min/max updates
+            if micros < self.min_latency_micros.load(Ordering::Relaxed) {
+                let _ = self.min_latency_micros.fetch_min(micros, Ordering::Relaxed);
+            }
+            if micros > self.max_latency_micros.load(Ordering::Relaxed) {
+                let _ = self.max_latency_micros.fetch_max(micros, Ordering::Relaxed);
+            }
+
+            let current_ewma = self.ewma_latency_micros.load(Ordering::Relaxed);
             let next_ewma = if current_ewma == 0 {
                 micros
             } else {
                 (current_ewma * 4 + micros) / 5
             };
-            match self.ewma_latency_micros.compare_exchange_weak(
-                current_ewma,
-                next_ewma,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(actual) => current_ewma = actual,
-            }
+            self.ewma_latency_micros.store(next_ewma, Ordering::Relaxed);
         }
     }
 
     #[inline(always)]
     pub fn record_error(&self) {
         self.total_errors.fetch_add(1, Ordering::Relaxed);
-        self.consecutive_successes.store(0, Ordering::Relaxed);
-        self.consecutive_errors.fetch_add(1, Ordering::Relaxed);
-        // Penalty for error in EWMA: artificially increase latency estimate
-        let mut current_ewma = self.ewma_latency_micros.load(Ordering::Relaxed);
-        loop {
-            let next_ewma = if current_ewma == 0 {
-                100_000 // 100ms penalty
-            } else {
-                current_ewma.saturating_add(50_000)
-            };
-            match self.ewma_latency_micros.compare_exchange_weak(
-                current_ewma,
-                next_ewma,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(actual) => current_ewma = actual,
-            }
+        if self.consecutive_successes.load(Ordering::Relaxed) != 0 {
+            self.consecutive_successes.store(0, Ordering::Relaxed);
         }
+        self.consecutive_errors.fetch_add(1, Ordering::Relaxed);
+
+        // Penalize EWMA latency without CAS loop
+        let current_ewma = self.ewma_latency_micros.load(Ordering::Relaxed);
+        let next_ewma = if current_ewma == 0 {
+            100_000 // 100ms penalty
+        } else {
+            current_ewma.saturating_add(50_000)
+        };
+        self.ewma_latency_micros.store(next_ewma, Ordering::Relaxed);
     }
 
     #[inline(always)]

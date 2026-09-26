@@ -1,5 +1,12 @@
 /target
 **/*.rs.bk
-Cargo.lock
 .DS_Store
 *.log
+
+# Node & Next.js
+node_modules/
+website/node_modules/
+website/.next/
+website/out/
+.vercel
+website/.vercel

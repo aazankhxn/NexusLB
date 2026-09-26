@@ -2,8 +2,8 @@ use crossbeam::queue::ArrayQueue;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-pub const DEFAULT_BUFFER_SIZE: usize = 16 * 1024; // 16KB optimal for HTTP / TCP streaming
-pub const DEFAULT_POOL_CAPACITY: usize = 512;
+pub const DEFAULT_BUFFER_SIZE: usize = 16 * 1024; // 16KB - optimal for L1/L2 cache-friendly HTTP proxying
+pub const DEFAULT_POOL_CAPACITY: usize = 1024;
 
 /// Lock-free memory pool for reusable I/O buffers to eliminate hot-path allocations
 #[derive(Clone)]
@@ -19,10 +19,11 @@ struct BufferPoolInner {
 impl BufferPool {
     pub fn new(capacity: usize, buffer_size: usize) -> Self {
         let queue = ArrayQueue::new(capacity);
-        // Pre-warm the pool with a lean working set (64 buffers = 1MB)
-        let prewarm_count = capacity.min(64);
+        // Pre-warm the pool with a lean working set (256 buffers = 8MB for 32KB buffers)
+        let prewarm_count = capacity.min(256);
         for _ in 0..prewarm_count {
-            let _ = queue.push(vec![0u8; buffer_size]);
+            let buf = vec![0u8; buffer_size];
+            let _ = queue.push(buf);
         }
 
         Self {
@@ -31,13 +32,11 @@ impl BufferPool {
     }
 
     pub fn acquire(&self) -> PooledBuffer {
-        let mut buffer = self
+        let buffer = self
             .inner
             .queue
             .pop()
             .unwrap_or_else(|| vec![0u8; self.inner.buffer_size]);
-
-        buffer.resize(self.inner.buffer_size, 0);
 
         PooledBuffer {
             pool: Some(self.clone()),
@@ -46,10 +45,9 @@ impl BufferPool {
     }
 
     fn release(&self, mut buffer: Vec<u8>) {
-        if buffer.capacity() < self.inner.buffer_size {
-            buffer.reserve(self.inner.buffer_size - buffer.capacity());
+        if buffer.len() != self.inner.buffer_size {
+            buffer.resize(self.inner.buffer_size, 0);
         }
-        buffer.clear();
         let _ = self.inner.queue.push(buffer);
     }
 }

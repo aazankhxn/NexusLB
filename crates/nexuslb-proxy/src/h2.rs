@@ -15,12 +15,15 @@ pub struct H2Proxy;
 
 impl H2Proxy {
     /// Accept HTTP/2 client connection and multiplex individual streams to backends
-    pub async fn handle_connection(
-        client: TcpStream,
+    pub async fn handle_connection<S>(
+        client: S,
         client_addr: SocketAddr,
         backend: Arc<Backend>,
         metrics: Arc<WorkerMetrics>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<()>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         let mut connection = server::handshake(client).await.map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::ConnectionReset,

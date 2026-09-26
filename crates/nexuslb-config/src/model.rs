@@ -21,6 +21,10 @@ pub struct NexusConfig {
     pub admin: AdminConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+    #[serde(default)]
+    pub access_log: AccessLogConfig,
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +119,8 @@ pub struct RouteConfig {
     pub pool: String,
     #[serde(default)]
     pub priority: i32,
+    #[serde(default)]
+    pub filters: Option<FilterConfig>,
 }
 
 fn default_path() -> String {
@@ -221,6 +227,8 @@ pub struct TlsConfig {
     #[serde(default)]
     pub key_path: Option<String>,
     #[serde(default)]
+    pub redirect_http_to_https: bool,
+    #[serde(default)]
     pub sni: HashMap<String, SniConfig>,
 }
 
@@ -283,4 +291,62 @@ pub struct RateLimitConfig {
     pub global_rps: Option<u32>,
     #[serde(default)]
     pub client_rps: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessLogConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_access_log_format")]
+    pub format: String, // "json" | "combined"
+    #[serde(default = "default_access_log_target")]
+    pub target: String, // "stdout" | "stderr" | file path
+}
+
+impl Default for AccessLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            format: default_access_log_format(),
+            target: default_access_log_target(),
+        }
+    }
+}
+
+fn default_access_log_format() -> String {
+    "json".to_string()
+}
+
+fn default_access_log_target() -> String {
+    "stdout".to_string()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiscoveryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_discovery_provider")]
+    pub provider: String, // "file" | "dns" | "k8s"
+    #[serde(default = "default_discovery_interval")]
+    pub interval: String,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+fn default_discovery_provider() -> String {
+    "file".to_string()
+}
+
+fn default_discovery_interval() -> String {
+    "10s".to_string()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FilterConfig {
+    #[serde(default)]
+    pub jwt_secret: Option<String>,
+    #[serde(default)]
+    pub add_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub remove_headers: Vec<String>,
 }

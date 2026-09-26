@@ -16,6 +16,10 @@ impl FilterChain {
         self.filters.push(filter);
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.filters.is_empty()
+    }
+
     pub fn execute_request(
         &self,
         method: &mut String,

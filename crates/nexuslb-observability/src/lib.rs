@@ -1,8 +1,10 @@
+pub mod access_log;
 pub mod span;
 pub mod trace_context;
 
+pub use access_log::{AccessLogEntry, AccessLogFormat, AccessLogger};
 pub use span::{ProxySpan, SpanReport};
-pub use trace_context::TraceContext;
+pub use trace_context::{format_traceparent, TraceContext};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 

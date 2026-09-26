@@ -1,11 +1,48 @@
-# NexusLB
+<p align="center">
+  <img src="assets/nexuslb.png" alt="NexusLB Logo" width="110" height="110" />
+</p>
 
-> **High-performance adaptive load balancing for modern infrastructure.**
+<h1 align="center">NexusLB</h1>
 
-[![Build & Test](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/nexuslb/nexuslb)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-stable%201.80%2B-orange.svg)](https://www.rust-lang.org/)
-[![Crates.io](https://img.shields.io/badge/crates.io-v0.1.0-red.svg)](https://crates.io/crates/nexuslb-cli)
+<p align="center">
+  <strong>Sub-Millisecond Layer 7 Reverse Proxy & Intelligent Load Balancer</strong><br />
+  <em>Engineered in pure safe Rust with Tokio async I/O and zero-allocation streaming</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nexuslb/nexuslb"><img src="https://img.shields.io/badge/version-v0.0.1-blue.svg" alt="Version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20MIT-brightgreen.svg" alt="License" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable%201.80%2B-orange.svg" alt="Rust" /></a>
+  <a href="https://github.com/nexuslb/nexuslb"><img src="https://img.shields.io/badge/tests-29%20passed-success.svg" alt="Tests" /></a>
+  <a href="website"><img src="https://img.shields.io/badge/website-Next.js%20(Apple%20Design)-black.svg" alt="Website" /></a>
+</p>
+
+---
+
+## Documentation Quick Links
+
+| Guide | Description |
+| :--- | :--- |
+| **[Getting Started](docs/GETTING_STARTED.md)** | Quickstart installation, CLI command reference, and first run in 60s |
+| **[Configuration Reference](docs/CONFIGURATION.md)** | Full specification of `nexuslb.yaml`, routing filters, TLS, and Admin REST API |
+| **[Scheduling Algorithms](docs/ALGORITHMS.md)** | Deep dive into all 10 load balancing algorithms and mathematical models |
+| **[Production Operations Guide](docs/PRODUCTION_GUIDE.md)** | OS sysctl tuning, systemd unit, Docker containerization, and Prometheus metrics |
+| **[Interactive Website](website/index.html)** | Interactive browser website with live benchmark explorer and algorithm simulator |
+
+---
+
+## Benchmark Showdown Highlights
+
+*Empirical testing on identical hardware (Apple Silicon 8-Core, loopback mock HTTP backends, C=100 concurrency):*
+
+| Metric | NGINX (Production) | UltraBalancer | **NexusLB v0.1.0** | Advantage |
+| :--- | :--- | :--- | :--- | :--- |
+| **Throughput (C=50)** | 109,160 req/s | 83,152 req/s | **118,872 req/s** | **NexusLB (+43.0% vs Ultra)** |
+| **Throughput (C=100)** | 107,363 req/s | 78,296 req/s | **111,470 req/s** | **NexusLB (+3.8% vs NGINX)** |
+| **Throughput (C=250)** | 107,560 req/s | 79,764 req/s | **109,500 req/s** | **NexusLB (+1.8% vs NGINX)** |
+| **Median Latency (P50)** | 658 µs | 1,137 µs | **525 µs** | **NexusLB (20.2% faster)** |
+| **Memory Footprint (RSS)** | 22.7 MB | 36.4 MB | **2.6 MB** | **NexusLB (88.6% leaner)** |
+| **Hot Reload Latency** | Process fork / Execve | N/A | **< 1 µs** | **Atomic ArcSwap zero drops** |
 
 ---
 

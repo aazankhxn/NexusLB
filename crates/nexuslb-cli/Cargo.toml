@@ -28,6 +28,8 @@ nexuslb-tui = { workspace = true }
 nexuslb-engine-tokio = { workspace = true }
 nexuslb-engine-io-uring = { workspace = true }
 nexuslb-engine-xdp = { workspace = true }
+nexuslb-wasm = { workspace = true }
+nexuslb-discovery = { workspace = true }
 
 clap = { workspace = true }
 tokio = { workspace = true }

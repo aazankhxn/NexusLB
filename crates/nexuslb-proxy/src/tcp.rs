@@ -56,18 +56,22 @@ impl TcpProxy {
             }
         }
     }
-    pub async fn forward(
-        mut client: TcpStream,
-        mut upstream: TcpStream,
+    pub async fn forward<C, U>(
+        client: C,
+        upstream: U,
         backend: Arc<Backend>,
         metrics: Arc<WorkerMetrics>,
         buffer_pool: BufferPool,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<()>
+    where
+        C: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+        U: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         let start = Instant::now();
         backend.stats().inc_active_connections();
 
-        let (mut client_read, mut client_write) = client.split();
-        let (mut upstream_read, mut upstream_write) = upstream.split();
+        let (mut client_read, mut client_write) = tokio::io::split(client);
+        let (mut upstream_read, mut upstream_write) = tokio::io::split(upstream);
 
         let pool_c2u = buffer_pool.clone();
         let pool_u2c = buffer_pool.clone();

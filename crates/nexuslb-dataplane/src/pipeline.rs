@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::{debug, trace, warn};
 
 use crate::state::SharedDataplaneState;
 use nexuslb_metrics::WorkerMetrics;
-use nexuslb_proxy::{HttpProxy, TcpProxy};
+use nexuslb_proxy::{H2Proxy, HttpProxy, TcpProxy};
 use nexuslb_scheduler::traits::SelectionContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,18 +45,28 @@ impl DataplanePipeline {
         }
         let _guard = ConnectionGuard(metrics.clone());
 
-        // 2. Peek initial bytes for protocol detection (up to 24 bytes for HTTP/2 preface)
-        let mut peek_buf = [0u8; 24];
-        let peek_n = match client.peek(&mut peek_buf).await {
+        // 2. Read initial bytes directly into pooled buffer (zero MSG_PEEK overhead)
+        let mut read_buf = current_state.buffer_pool.acquire();
+        let read_n = match client.read(&mut read_buf[..]).await {
             Ok(n) if n > 0 => n,
             _ => return, // Client disconnected or error
         };
 
-        let protocol = Self::detect_protocol(&peek_buf[..peek_n]);
+        metrics.add_bytes_received(read_n as u64);
+        let protocol = Self::detect_protocol(&read_buf[..read_n]);
 
         match protocol {
             DetectedProtocol::Http => {
-                Self::handle_http(client, client_addr, &current_state, metrics, false).await;
+                Self::handle_http(
+                    client,
+                    client_addr,
+                    &current_state,
+                    metrics,
+                    false,
+                    read_buf,
+                    read_n,
+                )
+                .await;
             }
             DetectedProtocol::Http2 => {
                 Self::handle_http2(client, client_addr, &current_state, metrics).await;
@@ -65,12 +75,53 @@ impl DataplanePipeline {
                 Self::handle_tcp(client, client_addr, &current_state, metrics).await;
             }
             DetectedProtocol::Tls => {
-                // If TLS acceptor configured, we can terminate TLS or forward
+                // If TLS acceptor configured, terminate TLS; otherwise passthrough
                 if let Some(ref acceptor) = current_state.tls_acceptor {
-                    match acceptor.accept(client).await {
-                        Ok(_tls_stream) => {
-                            // Forward over TLS
+                    let prefixed =
+                        nexuslb_network::PrefixedStream::new(read_buf[..read_n].to_vec(), client);
+                    match acceptor.accept(prefixed).await {
+                        Ok(mut tls_stream) => {
                             trace!("Terminated TLS handshake successfully");
+                            let mut inner_buf = current_state.buffer_pool.acquire();
+                            let inner_n = match tls_stream.read(&mut inner_buf[..]).await {
+                                Ok(n) if n > 0 => n,
+                                _ => return,
+                            };
+                            let inner_proto = Self::detect_protocol(&inner_buf[..inner_n]);
+                            match inner_proto {
+                                DetectedProtocol::Http2 => {
+                                    // HTTP/2 stream over TLS
+                                    let pool = current_state
+                                        .router
+                                        .default_pool()
+                                        .or_else(|| current_state.router.pools().values().next());
+                                    if let Some(pool) = pool {
+                                        let ctx = SelectionContext::with_ip(client_addr.ip());
+                                        if let Some(b) = pool.select(&ctx) {
+                                            let _ = H2Proxy::handle_connection(
+                                                tls_stream,
+                                                client_addr,
+                                                b,
+                                                metrics,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    // Default HTTP/1.1 over TLS
+                                    Self::handle_http(
+                                        tls_stream,
+                                        client_addr,
+                                        &current_state,
+                                        metrics,
+                                        true,
+                                        inner_buf,
+                                        inner_n,
+                                    )
+                                    .await;
+                                }
+                            }
                         }
                         Err(e) => {
                             debug!(error = %e, "TLS handshake failed");
@@ -86,34 +137,52 @@ impl DataplanePipeline {
 
     #[inline(always)]
     pub fn detect_protocol(peek: &[u8]) -> DetectedProtocol {
-        if peek.len() >= 3 && peek[0] == 0x16 && peek[1] == 0x03 {
-            return DetectedProtocol::Tls;
+        if peek.is_empty() {
+            return DetectedProtocol::RawTcp;
         }
 
-        if peek.starts_with(b"PRI * HTTP/2.0") {
-            return DetectedProtocol::Http2;
-        }
-
-        let http_prefixes = [
-            b"GET ", b"POST", b"HEAD", b"PUT ", b"DELE", b"OPTI", b"PATC", b"CONN",
-        ];
-
-        for prefix in &http_prefixes {
-            if peek.starts_with(*prefix) {
-                return DetectedProtocol::Http;
+        // Direct first-byte dispatch: eliminates loop over 8 prefixes
+        match peek[0] {
+            0x16 => {
+                // TLS ClientHello: 0x16 0x03 0x0X
+                if peek.len() >= 3 && peek[1] == 0x03 {
+                    return DetectedProtocol::Tls;
+                }
+                DetectedProtocol::RawTcp
             }
+            b'P' => {
+                if peek.starts_with(b"PRI * HTTP/2.0") {
+                    DetectedProtocol::Http2
+                } else if peek.len() >= 4 && (peek[1] == b'O' || peek[1] == b'U' || peek[1] == b'A')
+                {
+                    // POST, PUT, PATCH
+                    DetectedProtocol::Http
+                } else {
+                    DetectedProtocol::RawTcp
+                }
+            }
+            b'G' => DetectedProtocol::Http, // GET
+            b'H' => DetectedProtocol::Http, // HEAD
+            b'D' => DetectedProtocol::Http, // DELETE
+            b'O' => DetectedProtocol::Http, // OPTIONS
+            b'C' => DetectedProtocol::Http, // CONNECT
+            _ => DetectedProtocol::RawTcp,
         }
-
-        DetectedProtocol::RawTcp
     }
 
-    async fn handle_http(
-        client: TcpStream,
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_http<S>(
+        mut client: S,
         client_addr: SocketAddr,
         state: &crate::state::DataplaneState,
         metrics: Arc<WorkerMetrics>,
         is_tls: bool,
-    ) {
+        read_buf: nexuslb_network::PooledBuffer,
+        initial_read: usize,
+    ) where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         // Quick route match: check default pool or route by path/host
         let pool = state
             .router
@@ -134,7 +203,6 @@ impl DataplanePipeline {
             None => {
                 metrics.inc_backend_errors();
                 warn!(pool = %pool.name, "No healthy backend available in pool");
-                let mut client = client;
                 let _ = client
                     .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 23\r\n\r\nNo backends available\n")
                     .await;
@@ -144,7 +212,7 @@ impl DataplanePipeline {
 
         metrics.inc_backend_requests();
         let _ = HttpProxy::handle_connection(
-            client,
+            &mut client,
             client_addr,
             backend,
             state.conn_pool.clone(),
@@ -153,8 +221,15 @@ impl DataplanePipeline {
             state.retry_policy.clone(),
             is_tls,
             state.http_cache.clone(),
+            read_buf,
+            initial_read,
+            state.access_logger.clone(),
+            state.filter_chain.clone(),
+            state.redirect_http_to_https,
         )
         .await;
+
+        let _ = client.shutdown().await;
     }
 
     async fn handle_http2(

@@ -1,6 +1,40 @@
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static GLOBAL_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
+const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+
+/// Formats standard W3C traceparent into a fixed 55-byte stack array without any heap allocations
+#[inline(always)]
+pub fn format_traceparent(
+    version: u8,
+    trace_id: &[u8; 16],
+    span_id: &[u8; 8],
+    flags: u8,
+) -> [u8; 55] {
+    let mut out = [0u8; 55];
+    out[0] = HEX_CHARS[(version >> 4) as usize];
+    out[1] = HEX_CHARS[(version & 0x0f) as usize];
+    out[2] = b'-';
+    let mut idx = 3;
+    for &b in trace_id {
+        out[idx] = HEX_CHARS[(b >> 4) as usize];
+        out[idx + 1] = HEX_CHARS[(b & 0x0f) as usize];
+        idx += 2;
+    }
+    out[35] = b'-';
+    idx = 36;
+    for &b in span_id {
+        out[idx] = HEX_CHARS[(b >> 4) as usize];
+        out[idx + 1] = HEX_CHARS[(b & 0x0f) as usize];
+        idx += 2;
+    }
+    out[52] = b'-';
+    out[53] = HEX_CHARS[(flags >> 4) as usize];
+    out[54] = HEX_CHARS[(flags & 0x0f) as usize];
+    out
+}
 
 /// W3C TraceContext traceparent implementation following RFC specifications:
 /// format: {version}-{trace_id}-{parent_id}-{trace_flags}
@@ -14,21 +48,22 @@ pub struct TraceContext {
 }
 
 impl TraceContext {
-    /// Create a new root trace context with randomly generated trace_id and span_id
+    /// Create a new root trace context with high-precision timestamp and atomic sequence
+    #[inline(always)]
     pub fn new_root(sampled: bool) -> Self {
-        let mut rng = rand::thread_rng();
-        let mut trace_id = [0u8; 16];
-        let mut span_id = [0u8; 8];
-        rng.fill(&mut trace_id);
-        rng.fill(&mut span_id);
+        let counter = GLOBAL_TRACE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let now_nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
 
-        // Ensure non-zero IDs
-        if trace_id == [0u8; 16] {
-            trace_id[0] = 1;
-        }
-        if span_id == [0u8; 8] {
-            span_id[0] = 1;
-        }
+        let mut trace_id = [0u8; 16];
+        trace_id[0..8].copy_from_slice(&now_nanos.to_be_bytes());
+        trace_id[8..16].copy_from_slice(&counter.to_be_bytes());
+
+        let mut span_id = [0u8; 8];
+        let span_val = counter.wrapping_mul(0x9E3779B97F4A7C15);
+        span_id.copy_from_slice(&(if span_val == 0 { 1u64 } else { span_val }).to_be_bytes());
 
         let flags = if sampled { 0x01 } else { 0x00 };
 
@@ -41,18 +76,17 @@ impl TraceContext {
     }
 
     /// Spawn a downstream child trace context preserving trace_id and flags, but generating a new span_id
+    #[inline(always)]
     pub fn new_child(&self) -> Self {
-        let mut rng = rand::thread_rng();
-        let mut child_span_id = [0u8; 8];
-        rng.fill(&mut child_span_id);
-        if child_span_id == [0u8; 8] {
-            child_span_id[0] = 1;
-        }
+        let counter = GLOBAL_TRACE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut span_id = [0u8; 8];
+        let span_val = counter.wrapping_mul(0x517cc1b727220a95);
+        span_id.copy_from_slice(&(if span_val == 0 { 1u64 } else { span_val }).to_be_bytes());
 
         Self {
             version: self.version,
             trace_id: self.trace_id,
-            span_id: child_span_id,
+            span_id,
             flags: self.flags,
         }
     }
@@ -108,14 +142,10 @@ impl TraceContext {
     }
 
     /// Formats trace context as standard W3C traceparent string
+    #[inline(always)]
     pub fn to_header_value(&self) -> String {
-        format!(
-            "{:02x}-{}-{}-{:02x}",
-            self.version,
-            hex_encode_16(&self.trace_id),
-            hex_encode_8(&self.span_id),
-            self.flags
-        )
+        let bytes = format_traceparent(self.version, &self.trace_id, &self.span_id, self.flags);
+        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 
     pub fn trace_id_hex(&self) -> String {
@@ -135,22 +165,22 @@ impl fmt::Display for TraceContext {
 
 #[inline(always)]
 fn hex_encode_16(bytes: &[u8; 16]) -> String {
-    let mut s = String::with_capacity(32);
-    for b in bytes {
-        use std::fmt::Write;
-        let _ = write!(s, "{:02x}", b);
+    let mut out = [0u8; 32];
+    for (i, &b) in bytes.iter().enumerate() {
+        out[i * 2] = HEX_CHARS[(b >> 4) as usize];
+        out[i * 2 + 1] = HEX_CHARS[(b & 0x0f) as usize];
     }
-    s
+    unsafe { String::from_utf8_unchecked(out.to_vec()) }
 }
 
 #[inline(always)]
 fn hex_encode_8(bytes: &[u8; 8]) -> String {
-    let mut s = String::with_capacity(16);
-    for b in bytes {
-        use std::fmt::Write;
-        let _ = write!(s, "{:02x}", b);
+    let mut out = [0u8; 16];
+    for (i, &b) in bytes.iter().enumerate() {
+        out[i * 2] = HEX_CHARS[(b >> 4) as usize];
+        out[i * 2 + 1] = HEX_CHARS[(b & 0x0f) as usize];
     }
-    s
+    unsafe { String::from_utf8_unchecked(out.to_vec()) }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use ahash::AHashMap;
-use parking_lot::{Mutex, RwLock};
-use std::collections::VecDeque;
+use crossbeam::queue::ArrayQueue;
+use parking_lot::RwLock;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -36,15 +36,16 @@ impl Default for ConnectionPoolConfig {
     }
 }
 
+/// Lock-free idle connection slot using ArrayQueue for zero-contention acquire/return
 struct BackendPool {
-    idle: Mutex<VecDeque<PooledConnection>>,
+    idle: ArrayQueue<PooledConnection>,
     active_count: AtomicU64,
 }
 
 impl BackendPool {
-    fn new() -> Self {
+    fn new(capacity: usize) -> Self {
         Self {
-            idle: Mutex::new(VecDeque::new()),
+            idle: ArrayQueue::new(capacity.max(8)),
             active_count: AtomicU64::new(0),
         }
     }
@@ -66,42 +67,51 @@ impl ConnectionPool {
 
     #[inline(always)]
     fn get_or_create_backend_pool(&self, id: BackendId) -> Arc<BackendPool> {
-        let read = self.pools.read();
-        if let Some(pool) = read.get(&id) {
-            return pool.clone();
+        // Fast path: read-only lock (zero contention when pool exists, which is >99.99% of calls)
+        {
+            let read = self.pools.read();
+            if let Some(pool) = read.get(&id) {
+                return pool.clone();
+            }
         }
-        drop(read);
+        // Slow path: write lock only on first-ever access per backend
         let mut write = self.pools.write();
         write
             .entry(id)
-            .or_insert_with(|| Arc::new(BackendPool::new()))
+            .or_insert_with(|| Arc::new(BackendPool::new(self.config.max_idle_per_backend)))
             .clone()
     }
 
     pub async fn get_or_connect(&self, id: BackendId, addr: SocketAddr) -> Result<TcpStream> {
         let backend_pool = self.get_or_create_backend_pool(id);
 
-        // Try getting an idle connection from the pool without blocking any other backends
-        {
-            let mut idle = backend_pool.idle.lock();
-            while let Some(conn) = idle.pop_front() {
-                let now = Instant::now();
-                if now.duration_since(conn.last_used) > self.config.idle_timeout
-                    || now.duration_since(conn.created_at) > self.config.max_lifetime
-                {
-                    // Expired connection, drop it
-                    continue;
-                }
-
-                // Check connection health (non-blocking peek or ready check)
-                if Self::is_alive(&conn.stream) {
-                    backend_pool.active_count.fetch_add(1, Ordering::Relaxed);
-                    trace!(backend_id = %id, "Reusing pooled connection");
-                    return Ok(conn.stream);
-                }
+        // Lock-free pop from ArrayQueue — no mutex contention
+        let now = Instant::now();
+        while let Some(conn) = backend_pool.idle.pop() {
+            let idle_dur = now.duration_since(conn.last_used);
+            if idle_dur > self.config.idle_timeout
+                || now.duration_since(conn.created_at) > self.config.max_lifetime
+            {
+                // Expired connection, drop it and try next
+                continue;
             }
-            backend_pool.active_count.fetch_add(1, Ordering::Relaxed);
+
+            // If recently used (<100ms), skip the syscall liveness check
+            let is_alive = if idle_dur < Duration::from_millis(100) {
+                true
+            } else {
+                Self::is_alive(&conn.stream)
+            };
+
+            if is_alive {
+                backend_pool.active_count.fetch_add(1, Ordering::Relaxed);
+                trace!(backend_id = %id, "Reusing pooled connection");
+                return Ok(conn.stream);
+            }
+            // Dead connection — drop and try next
         }
+
+        backend_pool.active_count.fetch_add(1, Ordering::Relaxed);
 
         // Establish new connection if no valid pooled connection was found
         trace!(backend_id = %id, target = %addr, "Establishing new upstream connection");
@@ -124,24 +134,26 @@ impl ConnectionPool {
     }
 
     pub fn return_connection(&self, id: BackendId, stream: TcpStream) {
-        let read = self.pools.read();
-        let backend_pool = read.get(&id).cloned();
-        drop(read);
+        // Fast path: read lock to get pool reference
+        let backend_pool = {
+            let read = self.pools.read();
+            read.get(&id).cloned()
+        };
 
         if let Some(backend_pool) = backend_pool {
             backend_pool.active_count.fetch_sub(1, Ordering::Relaxed);
 
-            let mut idle = backend_pool.idle.lock();
-            if idle.len() < self.config.max_idle_per_backend && Self::is_alive(&stream) {
-                idle.push_back(PooledConnection {
-                    stream,
-                    created_at: Instant::now(),
-                    last_used: Instant::now(),
-                });
-                trace!(backend_id = %id, "Returned connection to pool");
-            }
+            let now = Instant::now();
+            // Lock-free push to ArrayQueue — no mutex contention
+            let _ = backend_pool.idle.push(PooledConnection {
+                stream,
+                created_at: now,
+                last_used: now,
+            });
+            // If queue is full, push returns Err and the connection is silently dropped
+            trace!(backend_id = %id, "Returned connection to pool");
         }
-        // Excess connection or dead connection gets closed on drop
+        // Excess connection gets closed on drop
     }
 
     pub fn dec_active(&self, id: BackendId) {

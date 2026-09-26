@@ -1,3 +1,3 @@
 pub mod server;
 
-pub use server::AdminServer;
+pub use server::{AdminServer, ReloadHandler};

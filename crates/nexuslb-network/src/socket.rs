@@ -20,8 +20,8 @@ impl Default for SocketConfig {
         Self {
             reuse_port: true,
             tcp_nodelay: true,
-            recv_buffer_size: Some(128 * 1024), // 128KB
-            send_buffer_size: Some(128 * 1024), // 128KB
+            recv_buffer_size: Some(256 * 1024), // 256KB
+            send_buffer_size: Some(256 * 1024), // 256KB
             keepalive_idle: Some(Duration::from_secs(60)),
             keepalive_interval: Some(Duration::from_secs(10)),
             keepalive_retries: Some(3),
@@ -53,8 +53,14 @@ pub fn create_listener(addr: SocketAddr, config: &SocketConfig) -> io::Result<Tc
     }
 
     socket.bind(&addr.into())?;
-    // Backlog 8192 for high concurrency bursts
-    socket.listen(8192)?;
+    // Backlog 16384 for high concurrency bursts (matches kernel somaxconn)
+    socket.listen(16384)?;
+
+    // TCP_FASTOPEN: allow SYN+data for faster connection establishment (Linux only)
+    #[cfg(target_os = "linux")]
+    {
+        let _ = socket.set_tcp_fastopen(256);
+    }
 
     let std_listener: std::net::TcpListener = socket.into();
     TcpListener::from_std(std_listener)

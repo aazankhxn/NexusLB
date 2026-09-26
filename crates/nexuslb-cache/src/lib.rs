@@ -136,6 +136,7 @@ impl CacheStorage {
 #[derive(Clone)]
 pub struct HttpCache {
     storage: Arc<RwLock<CacheStorage>>,
+    len: Arc<std::sync::atomic::AtomicUsize>,
     hits: Arc<AtomicU64>,
     misses: Arc<AtomicU64>,
     revalidations: Arc<AtomicU64>,
@@ -145,6 +146,7 @@ impl HttpCache {
     pub fn new(capacity: usize) -> Self {
         Self {
             storage: Arc::new(RwLock::new(CacheStorage::new(capacity))),
+            len: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             hits: Arc::new(AtomicU64::new(0)),
             misses: Arc::new(AtomicU64::new(0)),
             revalidations: Arc::new(AtomicU64::new(0)),
@@ -161,6 +163,11 @@ impl HttpCache {
     ) -> CacheResult {
         // Only GET and HEAD requests are cacheable
         if !method.eq_ignore_ascii_case("GET") && !method.eq_ignore_ascii_case("HEAD") {
+            return CacheResult::Miss;
+        }
+
+        // Fast-path: if cache is empty, avoid all string allocations and locks
+        if self.len.load(Ordering::Relaxed) == 0 {
             return CacheResult::Miss;
         }
 
@@ -252,7 +259,9 @@ impl HttpCache {
         };
 
         let mut storage = self.storage.write();
-        storage.put(key, cached)
+        let was_new = storage.put(key, cached);
+        self.len.store(storage.map.len(), Ordering::Relaxed);
+        was_new
     }
 
     pub fn hits(&self) -> u64 {

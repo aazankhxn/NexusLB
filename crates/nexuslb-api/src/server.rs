@@ -9,12 +9,15 @@ use nexuslb_dataplane::SharedDataplaneState;
 use nexuslb_health::DrainController;
 use nexuslb_metrics::GlobalMetrics;
 
+pub type ReloadHandler = Arc<dyn Fn() -> Result<String, String> + Send + Sync>;
+
 pub struct AdminServer {
     addr: SocketAddr,
     token: Option<String>,
     metrics: Arc<GlobalMetrics>,
     state: Arc<SharedDataplaneState>,
     config: Arc<NexusConfig>,
+    reload_handler: Option<ReloadHandler>,
 }
 
 impl AdminServer {
@@ -31,7 +34,13 @@ impl AdminServer {
             metrics,
             state,
             config,
+            reload_handler: None,
         }
+    }
+
+    pub fn with_reloader(mut self, reloader: ReloadHandler) -> Self {
+        self.reload_handler = Some(reloader);
+        self
     }
 
     pub async fn run(self) -> std::io::Result<()> {
@@ -42,6 +51,7 @@ impl AdminServer {
         let state = self.state.clone();
         let token = self.token.clone();
         let config = self.config.clone();
+        let reload_handler = self.reload_handler.clone();
 
         loop {
             let (stream, client_addr) = listener.accept().await?;
@@ -49,10 +59,19 @@ impl AdminServer {
             let state = state.clone();
             let token = token.clone();
             let config = config.clone();
+            let reload_handler = reload_handler.clone();
 
             tokio::spawn(async move {
-                if let Err(e) =
-                    Self::handle_client(stream, client_addr, metrics, state, token, config).await
+                if let Err(e) = Self::handle_client(
+                    stream,
+                    client_addr,
+                    metrics,
+                    state,
+                    token,
+                    config,
+                    reload_handler,
+                )
+                .await
                 {
                     trace!(error = %e, "Admin client connection terminated");
                 }
@@ -67,6 +86,7 @@ impl AdminServer {
         state: Arc<SharedDataplaneState>,
         expected_token: Option<String>,
         config: Arc<NexusConfig>,
+        reload_handler: Option<ReloadHandler>,
     ) -> std::io::Result<()> {
         let mut buf = [0u8; 4096];
         let n = stream.read(&mut buf).await?;
@@ -218,11 +238,28 @@ impl AdminServer {
                 let json = serde_json::to_string_pretty(&*config).unwrap_or_default();
                 ("200 OK", "application/json", json)
             }
-            ("POST", "/reload") => (
-                "200 OK",
-                "application/json",
-                r#"{"status":"reload requested"}"#.to_string(),
-            ),
+            ("POST", "/reload") => {
+                if let Some(ref reloader) = reload_handler {
+                    match reloader() {
+                        Ok(msg) => (
+                            "200 OK",
+                            "application/json",
+                            format!(r#"{{"status":"success","message":"{}"}}"#, msg),
+                        ),
+                        Err(e) => (
+                            "500 Internal Server Error",
+                            "application/json",
+                            format!(r#"{{"status":"error","error":"{}"}}"#, e),
+                        ),
+                    }
+                } else {
+                    (
+                        "200 OK",
+                        "application/json",
+                        r#"{"status":"reload requested"}"#.to_string(),
+                    )
+                }
+            }
             _ => (
                 "404 Not Found",
                 "application/json",

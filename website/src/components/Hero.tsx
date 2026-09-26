@@ -182,19 +182,19 @@ export function Hero() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: "18px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+            gap: "16px",
             marginBottom: "60px",
           }}
         >
-          <div className="apple-card" style={{ padding: "26px 22px", textAlign: "left" }}>
+          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-cyan)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Peak Throughput
               </span>
               <Zap size={18} color="var(--accent-cyan)" />
             </div>
-            <div style={{ fontSize: "38px", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               118,872
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
@@ -202,14 +202,14 @@ export function Hero() {
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "26px 22px", textAlign: "left" }}>
+          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-emerald)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Median Latency
               </span>
               <Flame size={18} color="var(--accent-emerald)" />
             </div>
-            <div style={{ fontSize: "38px", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               525 µs
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
@@ -217,14 +217,14 @@ export function Hero() {
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "26px 22px", textAlign: "left" }}>
+          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-purple)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Resident RAM
               </span>
               <Layers size={18} color="var(--accent-purple)" />
             </div>
-            <div style={{ fontSize: "38px", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               2.6 MB
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
@@ -232,14 +232,14 @@ export function Hero() {
             </div>
           </div>
 
-          <div className="apple-card" style={{ padding: "26px 22px", textAlign: "left" }}>
+          <div className="apple-card" style={{ padding: "24px 20px", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--accent-blue)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Hot Reload Time
               </span>
               <Shield size={18} color="var(--accent-blue)" />
             </div>
-            <div style={{ fontSize: "38px", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+            <div style={{ fontSize: "clamp(30px, 4vw, 38px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
               &lt; 1 µs
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-tertiary)", marginTop: "6px" }}>
@@ -267,18 +267,27 @@ export function Hero() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              padding: "12px 18px",
+              padding: "10px 16px",
               backgroundColor: "rgba(255, 255, 255, 0.03)",
               borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+              flexWrap: "wrap",
+              gap: "10px",
             }}
           >
-            <div style={{ display: "flex", gap: "8px" }}>
-              <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#ff5f56" }} />
-              <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#ffbd2e" }} />
-              <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#27c93f" }} />
+            <div style={{ display: "flex", gap: "7px", alignItems: "center" }}>
+              <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#ff5f56" }} />
+              <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#ffbd2e" }} />
+              <span style={{ width: "11px", height: "11px", borderRadius: "50%", backgroundColor: "#27c93f" }} />
             </div>
 
-            <div className="apple-segmented">
+            <div
+              className="apple-segmented"
+              style={{
+                maxWidth: "100%",
+                overflowX: "auto",
+                scrollbarWidth: "none",
+              }}
+            >
               <button
                 className={`apple-segment-btn ${terminalTab === "start" ? "active" : ""}`}
                 onClick={() => setTerminalTab("start")}

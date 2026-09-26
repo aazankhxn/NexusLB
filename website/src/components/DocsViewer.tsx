@@ -553,30 +553,43 @@ bombardier -c 250 -n 1000000 http://127.0.0.1:8080/`,
         </div>
       </div>
 
+      {/* Mobile Horizontal Pill Category Selector */}
+      <div className="mobile-docs-pills" style={{ marginBottom: "16px" }}>
+        {docModules.map((m) => {
+          const isActive = m.id === activeCategory;
+          return (
+            <button
+              key={m.id}
+              onClick={() => {
+                setActiveCategory(m.id);
+                setActiveSubId(m.subsections[0]?.id || "");
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 14px",
+                borderRadius: "9999px",
+                background: isActive ? "rgba(0, 113, 227, 0.25)" : "rgba(255, 255, 255, 0.06)",
+                border: isActive ? "1px solid rgba(0, 113, 227, 0.45)" : "1px solid rgba(255, 255, 255, 0.08)",
+                color: isActive ? "#ffffff" : "var(--text-secondary)",
+                fontSize: "12.5px",
+                fontWeight: isActive ? 600 : 500,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              <span>{m.title.replace(/^\d+\.\s*/, "")}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Multi-Column Split View */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "280px minmax(0, 1fr) 220px",
-          gap: "32px",
-          alignItems: "start",
-        }}
-      >
+      <div className="docs-layout">
         {/* Left Column: Module Categories Sidebar */}
-        <aside
-          style={{
-            position: "sticky",
-            top: "96px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px",
-            background: "rgba(16, 18, 27, 0.65)",
-            backdropFilter: "blur(20px)",
-            borderRadius: "18px",
-            padding: "16px 12px",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-          }}
-        >
+        <aside className="docs-sidebar">
           <div
             style={{
               fontSize: "11px",
@@ -1001,19 +1014,7 @@ bombardier -c 250 -n 1000000 http://127.0.0.1:8080/`,
         </div>
 
         {/* Right Column: "On This Page" Sticky Table of Contents */}
-        <aside
-          style={{
-            position: "sticky",
-            top: "96px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            padding: "16px 14px",
-            borderRadius: "16px",
-            background: "rgba(16, 18, 27, 0.45)",
-            border: "1px solid rgba(255, 255, 255, 0.06)",
-          }}
-        >
+        <aside className="docs-toc">
           <div
             style={{
               fontSize: "11px",
@@ -1058,7 +1059,7 @@ bombardier -c 250 -n 1000000 http://127.0.0.1:8080/`,
             }}
           >
             <a
-              href="https://github.com/Aazann/NexusLB"
+              href="https://github.com/aazankhxn/NexusLB"
               target="_blank"
               rel="noreferrer"
               style={{

@@ -82,7 +82,15 @@ export function Showdown() {
             }}
           >
             {/* Competitor Picker */}
-            <div className="apple-segmented">
+            <div
+              className="apple-segmented"
+              style={{
+                maxWidth: "100%",
+                overflowX: "auto",
+                scrollbarWidth: "none",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
               <button
                 className={`apple-segment-btn ${competitor === "nginx" ? "active" : ""}`}
                 onClick={() => setCompetitor("nginx")}
@@ -110,11 +118,11 @@ export function Showdown() {
             </div>
 
             {/* Concurrency Selector */}
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "13px", color: "var(--text-tertiary)", fontWeight: 500 }}>
                 Concurrency:
               </span>
-              <div className="apple-segmented">
+              <div className="apple-segmented" style={{ scrollbarWidth: "none" }}>
                 <button
                   className={`apple-segment-btn ${concurrency === "50" ? "active" : ""}`}
                   onClick={() => setConcurrency("50")}

@@ -324,13 +324,120 @@ pre code {
   line-height: 1.65;
 }
 
-/* Responsive */
+/* Responsive Grid & Layout Utilities */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 220px;
+  gap: 32px;
+  align-items: start;
+}
+
+.docs-sidebar {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(16, 18, 27, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 18px;
+  padding: 16px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.docs-toc {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px;
+  border-radius: 16px;
+  background: rgba(16, 18, 27, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mobile-docs-pills {
+  display: none;
+}
+
+.mobile-only {
+  display: none !important;
+}
+
+.desktop-only {
+  display: flex !important;
+}
+
+/* Tablet Breakpoint (769px - 1080px) */
+@media (max-width: 1080px) {
+  .docs-layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 24px;
+  }
+  .docs-toc {
+    display: none !important;
+  }
+}
+
+/* Mobile & Small Tablet Breakpoint (<= 768px) */
 @media (max-width: 768px) {
   .section {
-    padding: 60px 0;
+    padding: 64px 0;
+  }
+  .container {
+    padding: 0 16px;
   }
   .apple-card {
-    padding: 24px;
+    padding: 20px;
     border-radius: var(--radius-md);
+  }
+  .desktop-nav {
+    display: none !important;
+  }
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: flex !important;
+  }
+  .docs-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .docs-sidebar {
+    display: none !important;
+  }
+  .docs-toc {
+    display: none !important;
+  }
+  .mobile-docs-pills {
+    display: flex !important;
+    overflow-x: auto;
+    white-space: nowrap;
+    gap: 8px;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-docs-pills::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Extra Small Phones (<= 480px) */
+@media (max-width: 480px) {
+  .section-title {
+    font-size: 30px;
+  }
+  .section-desc {
+    font-size: 15px;
+    margin-bottom: 36px;
+  }
+  .apple-card {
+    padding: 16px;
   }
 }

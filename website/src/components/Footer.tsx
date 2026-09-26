@@ -180,7 +180,7 @@ export default function Footer() {
             </p>
             <div style={{ display: "flex", gap: "12px" }}>
               <a
-                href="https://github.com"
+                href="https://github.com/aazankhxn/NexusLB"
                 target="_blank"
                 rel="noreferrer"
                 style={{

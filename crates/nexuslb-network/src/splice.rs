@@ -148,22 +148,36 @@ impl SpliceEngine {
                     break;
                 }
 
-                backend_write.writable().await?;
-                let written = unsafe {
-                    libc::splice(
-                        pipe_up_r,
-                        std::ptr::null_mut(),
-                        backend_fd,
-                        std::ptr::null_mut(),
-                        n as usize,
-                        libc::SPLICE_F_NONBLOCK | libc::SPLICE_F_MOVE,
-                    )
-                };
+                let mut written_total = 0usize;
+                while written_total < n as usize {
+                    backend_write.writable().await?;
+                    let written = unsafe {
+                        libc::splice(
+                            pipe_up_r,
+                            std::ptr::null_mut(),
+                            backend_fd,
+                            std::ptr::null_mut(),
+                            (n as usize) - written_total,
+                            libc::SPLICE_F_NONBLOCK | libc::SPLICE_F_MOVE,
+                        )
+                    };
 
-                if written < 0 {
-                    return Err(io::Error::last_os_error());
+                    if written < 0 {
+                        let err = io::Error::last_os_error();
+                        if err.kind() == io::ErrorKind::WouldBlock {
+                            continue;
+                        }
+                        return Err(err);
+                    }
+                    if written == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            "zero bytes written during splice",
+                        ));
+                    }
+                    written_total += written as usize;
                 }
-                total += written as u64;
+                total += written_total as u64;
             }
             Ok::<u64, io::Error>(total)
         };
@@ -195,22 +209,36 @@ impl SpliceEngine {
                     break;
                 }
 
-                client_write.writable().await?;
-                let written = unsafe {
-                    libc::splice(
-                        pipe_down_r,
-                        std::ptr::null_mut(),
-                        client_fd,
-                        std::ptr::null_mut(),
-                        n as usize,
-                        libc::SPLICE_F_NONBLOCK | libc::SPLICE_F_MOVE,
-                    )
-                };
+                let mut written_total = 0usize;
+                while written_total < n as usize {
+                    client_write.writable().await?;
+                    let written = unsafe {
+                        libc::splice(
+                            pipe_down_r,
+                            std::ptr::null_mut(),
+                            client_fd,
+                            std::ptr::null_mut(),
+                            (n as usize) - written_total,
+                            libc::SPLICE_F_NONBLOCK | libc::SPLICE_F_MOVE,
+                        )
+                    };
 
-                if written < 0 {
-                    return Err(io::Error::last_os_error());
+                    if written < 0 {
+                        let err = io::Error::last_os_error();
+                        if err.kind() == io::ErrorKind::WouldBlock {
+                            continue;
+                        }
+                        return Err(err);
+                    }
+                    if written == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            "zero bytes written during splice",
+                        ));
+                    }
+                    written_total += written as usize;
                 }
-                total += written as u64;
+                total += written_total as u64;
             }
             Ok::<u64, io::Error>(total)
         };

@@ -50,8 +50,13 @@ impl BufferPool {
         // allocation and replace with a fresh correctly-sized buffer.
         if buffer.capacity() > self.inner.buffer_size * 2 {
             buffer = vec![0u8; self.inner.buffer_size];
-        } else if buffer.len() != self.inner.buffer_size {
-            buffer.resize(self.inner.buffer_size, 0);
+        } else {
+            if buffer.len() != self.inner.buffer_size {
+                buffer.resize(self.inner.buffer_size, 0);
+            }
+            // Memory hygiene / CWE-226: Zero out the buffer before returning it to the pool
+            // to prevent residual session data, JWTs, cookies, or secrets from leaking to subsequent requests.
+            buffer.fill(0);
         }
         let _ = self.inner.queue.push(buffer);
     }

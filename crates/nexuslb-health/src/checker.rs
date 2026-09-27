@@ -125,16 +125,12 @@ impl ActiveHealthChecker {
                         .await
                         .map_err(|e| format!("TCP connect error: {}", e))?;
 
-                    let clean_path = path.replace(['\r', '\n'], "");
-                    let clean_path = if clean_path.starts_with('/') {
-                        clean_path
-                    } else {
-                        format!("/{}", clean_path)
-                    };
+                    let clean_path = sanitize_health_path(path);
+                    let safe_path = clean_path.replace(' ', "%20");
 
                     let request = format!(
                         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: NexusLB-HealthCheck/1.0\r\n\r\n",
-                        clean_path, addr
+                        safe_path, addr
                     );
                     stream
                         .write_all(request.as_bytes())
@@ -152,7 +148,7 @@ impl ActiveHealthChecker {
                             break;
                         }
                         total += n;
-                        if buf[..total].windows(2).any(|w| w == b"\r\n" || w == b"\n") {
+                        if buf[..total].contains(&b'\n') {
                             break;
                         }
                     }
@@ -192,5 +188,15 @@ impl ActiveHealthChecker {
                 }
             }
         }
+    }
+}
+
+/// Sanitize HTTP health check probe path against CRLF and null injection (SEC-16)
+pub fn sanitize_health_path(path: &str) -> String {
+    let clean = path.replace(['\r', '\n', '\0'], "");
+    if clean.starts_with('/') {
+        clean
+    } else {
+        format!("/{}", clean)
     }
 }

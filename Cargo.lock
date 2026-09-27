@@ -1160,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-api"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "httparse",
  "nexuslb-config",
@@ -1171,13 +1171,14 @@ dependencies = [
  "nexuslb-router",
  "serde",
  "serde_json",
+ "subtle",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "nexuslb-benchmarks"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1199,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-cache"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "bytes",
@@ -1211,7 +1212,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-cli"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1243,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-config"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "nexuslb-core",
  "serde",
@@ -1255,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "bytes",
@@ -1267,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-dataplane"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -1290,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-discovery"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1304,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-engine-io-uring"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "io-uring",
  "libc",
@@ -1317,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-engine-tokio"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "nexuslb-core",
@@ -1331,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-engine-xdp"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "nexuslb-core",
  "nexuslb-dataplane",
@@ -1342,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-health"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "nexuslb-core",
  "nexuslb-metrics",
@@ -1354,10 +1355,13 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-integration-tests"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bytes",
+ "h2",
+ "http",
  "httparse",
  "nexuslb-api",
  "nexuslb-cache",
@@ -1376,6 +1380,7 @@ dependencies = [
  "nexuslb-tls",
  "nexuslb-wasm",
  "rcgen",
+ "ring",
  "rustls",
  "rustls-pki-types",
  "serde_json",
@@ -1385,7 +1390,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-metrics"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "nexuslb-core",
  "serde",
@@ -1394,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-network"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "bytes",
@@ -1411,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-observability"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "crossbeam",
  "rand 0.8.8",
@@ -1423,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-proxy"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1449,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-router"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "nexuslb-core",
@@ -1460,7 +1465,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-runtime"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "nexuslb-core",
  "nexuslb-dataplane",
@@ -1473,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-scheduler"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "ahash",
  "nexuslb-core",
@@ -1484,7 +1489,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-tls"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arc-swap",
  "nexuslb-core",
@@ -1502,7 +1507,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-tui"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1516,7 +1521,7 @@ dependencies = [
 
 [[package]]
 name = "nexuslb-wasm"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",

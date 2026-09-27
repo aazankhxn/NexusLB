@@ -19,22 +19,10 @@ const MAX_ADMIN_CONNECTIONS: usize = 16;
 /// Read timeout for admin API requests to prevent slowloris attacks.
 const ADMIN_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Constant-time byte comparison to eliminate side-channel timing attacks.
-/// Unlike naive implementations, this does NOT early-return on length mismatch,
-/// preventing attackers from discovering the expected token length via timing.
+/// Cryptographic constant-time comparison to eliminate side-channel timing attacks.
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    // XOR fold with length-independent traversal:
-    // We iterate max(a.len(), b.len()) times, reading 0x00 for the shorter input
-    // beyond its boundary. The length difference itself is folded into `diff` using usize
-    // to prevent modulo-256 truncation vulnerabilities.
-    let max_len = a.len().max(b.len());
-    let mut diff: usize = a.len() ^ b.len();
-    for i in 0..max_len {
-        let byte_a = if i < a.len() { a[i] as usize } else { 0 };
-        let byte_b = if i < b.len() { b[i] as usize } else { 0 };
-        diff |= byte_a ^ byte_b;
-    }
-    diff == 0
+    use subtle::ConstantTimeEq;
+    a.ct_eq(b).into()
 }
 
 pub struct AdminServer {
@@ -153,9 +141,19 @@ impl AdminServer {
     ) -> std::io::Result<()> {
         let mut buf = [0u8; 8192];
         let mut total_read = 0;
+        let deadline = tokio::time::Instant::now() + ADMIN_READ_TIMEOUT;
 
         let (method, path) = loop {
-            let n = match tokio::time::timeout(ADMIN_READ_TIMEOUT, stream.read(&mut buf[total_read..])).await {
+            let now = tokio::time::Instant::now();
+            let remaining = deadline.saturating_duration_since(now);
+            if remaining.is_zero() {
+                trace!("Admin API cumulative read timed out after {:?}", ADMIN_READ_TIMEOUT);
+                let resp = "HTTP/1.1 408 Request Timeout\r\nContent-Length: 15\r\n\r\nRequest Timeout";
+                let _ = stream.write_all(resp.as_bytes()).await;
+                return Ok(());
+            }
+
+            let n = match tokio::time::timeout(remaining, stream.read(&mut buf[total_read..])).await {
                 Ok(Ok(n)) if n > 0 => n,
                 Ok(Ok(_)) => {
                     if total_read == 0 {
@@ -168,6 +166,8 @@ impl AdminServer {
                 Ok(Err(e)) => return Err(e),
                 Err(_) => {
                     trace!("Admin API read timed out after {:?}", ADMIN_READ_TIMEOUT);
+                    let resp = "HTTP/1.1 408 Request Timeout\r\nContent-Length: 15\r\n\r\nRequest Timeout";
+                    let _ = stream.write_all(resp.as_bytes()).await;
                     return Ok(());
                 }
             };
@@ -178,7 +178,8 @@ impl AdminServer {
             match req.parse(&buf[..total_read]) {
                 Ok(httparse::Status::Complete(_)) => {
                     let method = req.method.unwrap_or("GET");
-                    let path = req.path.unwrap_or("/");
+                    let raw_path = req.path.unwrap_or("/");
+                    let path = raw_path.split('?').next().unwrap_or(raw_path);
 
                     let is_mutation = method.eq_ignore_ascii_case("POST")
                         || method.eq_ignore_ascii_case("PUT")

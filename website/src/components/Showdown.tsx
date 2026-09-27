@@ -171,7 +171,7 @@ export function Showdown() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
                 <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "7px" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-tint)", display: "inline-block" }} />
-                  NexusLB v0.0.4 (Open Source)
+                  NexusLB v0.0.5 (Open Source)
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-tint)" }}>
                   {current.nexusRps.toLocaleString()} req/s

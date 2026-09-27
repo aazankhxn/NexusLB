@@ -316,6 +316,10 @@ pub struct LimitsConfig {
     pub max_request_body_size: usize,
     #[serde(default = "default_max_conns")]
     pub max_connections: usize,
+    #[serde(default = "default_h2_max_concurrent_streams")]
+    pub h2_max_concurrent_streams: u32,
+    #[serde(default = "default_h2_stream_timeout_secs")]
+    pub h2_stream_timeout_secs: u64,
 }
 
 impl Default for LimitsConfig {
@@ -324,6 +328,8 @@ impl Default for LimitsConfig {
             max_header_size: default_max_header_size(),
             max_request_body_size: default_max_body_size(),
             max_connections: default_max_conns(),
+            h2_max_concurrent_streams: default_h2_max_concurrent_streams(),
+            h2_stream_timeout_secs: default_h2_stream_timeout_secs(),
         }
     }
 }
@@ -338,6 +344,14 @@ fn default_max_body_size() -> usize {
 
 fn default_max_conns() -> usize {
     100_000
+}
+
+fn default_h2_max_concurrent_streams() -> u32 {
+    128
+}
+
+fn default_h2_stream_timeout_secs() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

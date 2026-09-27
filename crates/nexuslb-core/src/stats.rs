@@ -60,6 +60,36 @@ impl AtomicBackendStats {
     }
 
     #[inline(always)]
+    pub fn try_inc_active_connections(&self, max_limit: Option<u64>) -> bool {
+        match max_limit {
+            Some(limit) => {
+                let mut current = self.active_connections.load(Ordering::Acquire);
+                loop {
+                    if current >= limit {
+                        return false;
+                    }
+                    match self.active_connections.compare_exchange_weak(
+                        current,
+                        current + 1,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => {
+                            self.total_connections.fetch_add(1, Ordering::Relaxed);
+                            return true;
+                        }
+                        Err(actual) => current = actual,
+                    }
+                }
+            }
+            None => {
+                self.inc_active_connections();
+                true
+            }
+        }
+    }
+
+    #[inline(always)]
     pub fn dec_active_connections(&self) -> u64 {
         let prev = self.active_connections.fetch_sub(1, Ordering::Relaxed);
         if prev == 0 {

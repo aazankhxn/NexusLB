@@ -254,7 +254,21 @@ impl SlidingWindowRateLimiter {
     }
 
     pub fn check_ip(&self, ip: IpAddr) -> bool {
-        self.check_key(&ip.to_string(), 1)
+        let canon = canonicalize_ip(ip);
+        self.check_key(&canon.to_string(), 1)
+    }
+}
+
+/// Normalize IPv4-mapped IPv6 addresses (e.g. ::ffff:192.168.1.1) to canonical IPv4
+/// to prevent dual-stack rate limit evasion and quota splitting.
+#[inline(always)]
+pub fn canonicalize_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => IpAddr::V6(v6),
+        },
+        IpAddr::V4(v4) => IpAddr::V4(v4),
     }
 }
 
@@ -412,7 +426,8 @@ impl RateLimiter {
         }
 
         // Check per-client IP rate limit
-        if let (Some(rps), Some(ip)) = (self.client_rps, client_ip) {
+        if let (Some(rps), Some(raw_ip)) = (self.client_rps, client_ip) {
+            let ip = canonicalize_ip(raw_ip);
             let bucket = {
                 let map = self.ip_buckets.read();
                 map.get(&ip).map(|(b, _)| b.clone())

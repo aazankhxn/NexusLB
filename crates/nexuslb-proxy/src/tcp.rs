@@ -19,6 +19,9 @@ impl Drop for ConnGuard {
 /// Prevents indefinite connection slot consumption from idle or malicious sessions.
 const MAX_TCP_SESSION_DURATION: std::time::Duration = std::time::Duration::from_secs(3600); // 1 hour
 
+/// Maximum period of zero bidirectional data flow before terminating an idle TCP session.
+const TCP_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5 minutes
+
 pub struct TcpProxy;
 
 impl TcpProxy {
@@ -105,7 +108,14 @@ impl TcpProxy {
             let mut buf = pool_c2u.acquire();
             let mut total_bytes = 0u64;
             loop {
-                let n = client_read.read(&mut buf).await?;
+                let n = match tokio::time::timeout(TCP_IDLE_TIMEOUT, client_read.read(&mut buf)).await {
+                    Ok(Ok(n)) => n,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        debug!("Client TCP read idle timeout after {:?}", TCP_IDLE_TIMEOUT);
+                        break;
+                    }
+                };
                 if n == 0 {
                     break;
                 }
@@ -113,7 +123,7 @@ impl TcpProxy {
                 total_bytes += n as u64;
                 metrics_c2u.add_bytes_received(n as u64);
             }
-            upstream_write.shutdown().await?;
+            let _ = upstream_write.shutdown().await;
             Ok::<u64, std::io::Error>(total_bytes)
         };
 
@@ -121,7 +131,14 @@ impl TcpProxy {
             let mut buf = pool_u2c.acquire();
             let mut total_bytes = 0u64;
             loop {
-                let n = upstream_read.read(&mut buf).await?;
+                let n = match tokio::time::timeout(TCP_IDLE_TIMEOUT, upstream_read.read(&mut buf)).await {
+                    Ok(Ok(n)) => n,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        debug!("Upstream TCP read idle timeout after {:?}", TCP_IDLE_TIMEOUT);
+                        break;
+                    }
+                };
                 if n == 0 {
                     break;
                 }
@@ -129,7 +146,7 @@ impl TcpProxy {
                 total_bytes += n as u64;
                 metrics_u2c.add_bytes_sent(n as u64);
             }
-            client_write.shutdown().await?;
+            let _ = client_write.shutdown().await;
             Ok::<u64, std::io::Error>(total_bytes)
         };
 

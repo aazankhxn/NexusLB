@@ -1,8 +1,33 @@
 use crate::traits::{Scheduler, SelectionContext};
 use nexuslb_core::backend::Backend;
 use nexuslb_core::types::{AlgorithmType, BackendState, CircuitState};
-use rand::Rng;
+use std::cell::Cell;
 use std::sync::Arc;
+
+thread_local! {
+    static RNG_STATE: Cell<u64> = Cell::new({
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        if seed == 0 { 0x517cc1b727220a95 } else { seed }
+    });
+}
+
+#[inline(always)]
+fn fast_rand_range(upper_bound: usize) -> usize {
+    if upper_bound <= 1 {
+        return 0;
+    }
+    RNG_STATE.with(|cell| {
+        let mut x = cell.get();
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        cell.set(x);
+        (x as usize) % upper_bound
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct AdaptiveConfig {
@@ -118,7 +143,6 @@ impl Scheduler for AdaptiveScheduler {
         // For large clusters (> 16 backends), full O(N) scan causes CPU contention.
         // We use Power-of-K Choices (P2C / Sampled Candidates, K=4) with zero allocation
         // to achieve O(1) selection with near-optimal load distribution.
-        let mut rng = rand::thread_rng();
         let mut min_score = f64::MAX;
         let mut best: Option<&Arc<Backend>> = None;
         let mut sampled_count = 0;
@@ -126,7 +150,7 @@ impl Scheduler for AdaptiveScheduler {
         let max_attempts = max_samples * 3; // Guard against sampling downed nodes
 
         for _ in 0..max_attempts {
-            let idx = rng.gen_range(0..backends.len());
+            let idx = fast_rand_range(backends.len());
             let b = &backends[idx];
             if !b.is_available() {
                 continue;
@@ -148,10 +172,14 @@ impl Scheduler for AdaptiveScheduler {
             return Some((*b).clone());
         }
 
-        // Fallback: If random sampling failed to find healthy nodes, scan sequentially
-        for b in backends {
-            if b.is_available() {
-                return Some(b.clone());
+        // Fallback: If random sampling failed to find healthy nodes, scan starting
+        // from a randomized offset to prevent cascading load onto backend 0.
+        let len = backends.len();
+        let start = fast_rand_range(len);
+        for i in 0..len {
+            let candidate = &backends[(start + i) % len];
+            if candidate.is_available() {
+                return Some(candidate.clone());
             }
         }
 

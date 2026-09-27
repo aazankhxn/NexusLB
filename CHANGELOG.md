@@ -5,6 +5,22 @@ All notable changes to NexusLB will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-09-27
+
+### Security Vulnerabilities Remediation & Complete Regression Suite
+- **Comprehensive Vulnerability Hardening (SEC-26 through SEC-33)**:
+  - **SEC-26 (WebSocket Blind TCP Tunneling)**: Enforced strict verification of upstream HTTP `101 Switching Protocols` response before raw bidirectional tunneling in `nexuslb-proxy`, eliminating blind tunneling and request smuggling on upstream error responses.
+  - **SEC-27 (Route Path Normalization & Traversal CWE-22)**: Implemented RFC 3986 path normalization resolving `..`, `.`, duplicate slashes, and percent encoding prior to route evaluation in `nexuslb-router`.
+  - **SEC-28 (HTTP Response Desynchronization & Socket Poisoning)**: Upstream chunked encoding strictly overrides conflicting `Content-Length` headers; unframed responses force connection closure to prevent connection reuse poisoning in `nexuslb-proxy`.
+  - **SEC-29 (Connection Pool active_count Underflow & Misdirection Isolation)**: Replaced atomic decrement with saturating subtraction (`fetch_update` with `saturating_sub(1)`), preventing integer underflow to `u64::MAX`. Cleared cached upstream handles on host misdirection in `nexuslb-network` and `nexuslb-proxy`.
+  - **SEC-30 (File Discovery Symlink & Device Read OOM Defense)**: Enforced regular file checks (`metadata.is_file()`) and bounded 10MB read caps in `nexuslb-discovery`.
+  - **SEC-31 (JWT Filter Fail-Closed on Malformed Headers)**: Replaced silent passthrough with explicit `401 Unauthorized` fail-closed responses for malformed base64/JSON tokens in `nexuslb-wasm`.
+  - **SEC-32 (Health Probe Bare-LF Line Termination Compliance)**: Fixed probe response parsing in `nexuslb-health` to recognize bare `\n` line termination matching RFC 9112 §2.2 tolerance rules.
+  - **SEC-33 (Dataplane Connection Exhaustion Defense)**: Implemented a 100,000 active connection ceiling in `nexuslb-dataplane` that sheds excess traffic with `503 Service Unavailable`.
+- **Automated Security Invariant Verification**:
+  - Expanded `security_regression_suite.rs` to 33 automated tests covering all identified vulnerabilities.
+  - Added HTTP/2 per-stream routing and upstream connection pool multiplexing test suite (`h2_stream_routing_test.rs`).
+
 ## [0.0.4] - 2026-09-27
 
 ### Security, Resilience & Telemetry Hardening

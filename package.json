@@ -1,6 +1,6 @@
 {
   "name": "nexuslb-monorepo",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "scripts": {
     "dev": "npm run --prefix website dev",

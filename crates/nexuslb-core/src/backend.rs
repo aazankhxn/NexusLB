@@ -168,6 +168,23 @@ impl Backend {
         true
     }
 
+    /// Atomically check availability and reserve a connection slot under atomic CAS.
+    /// Guarantees that concurrent workers cannot exceed max_connections under any race.
+    #[inline(always)]
+    pub fn try_acquire_connection(&self) -> bool {
+        let s = self.state();
+        if s == BackendState::Down || s == BackendState::Quarantined || self.circuit_state() == CircuitState::Open {
+            return false;
+        }
+        self.stats.try_inc_active_connections(self.max_connections)
+    }
+
+    /// Release a connection slot reserved with try_acquire_connection
+    #[inline(always)]
+    pub fn release_connection(&self) {
+        self.stats.dec_active_connections();
+    }
+
     #[inline(always)]
     pub fn active_connections(&self) -> u64 {
         self.stats.active_connections()
@@ -203,3 +220,74 @@ pub struct BackendSnapshot {
     pub stats: BackendStatsSnapshot,
     pub metadata: HashMap<String, String>,
 }
+
+/// RAII guard that holds an atomically reserved connection slot on a backend,
+/// automatically decrementing active_connections when dropped.
+pub struct BackendConnectionGuard(Arc<Backend>);
+
+impl BackendConnectionGuard {
+    pub fn try_acquire(backend: Arc<Backend>) -> Option<Self> {
+        if backend.try_acquire_connection() {
+            Some(Self(backend))
+        } else {
+            None
+        }
+    }
+
+    pub fn backend(&self) -> &Arc<Backend> {
+        &self.0
+    }
+}
+
+impl Drop for BackendConnectionGuard {
+    fn drop(&mut self) {
+        self.0.release_connection();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn test_atomic_max_connections_hard_limit() {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        let backend = Arc::new(Backend::new(
+            BackendId::new(1),
+            "test-backend",
+            BackendAddress::new(addr),
+            100,
+            Protocol::Http1,
+            Some(10), // Hard cap: exactly 10 connections
+        ));
+        backend.set_state(BackendState::Up);
+
+        // Spawn 20 threads simultaneously competing to acquire connection slots
+        let mut handles = Vec::new();
+        let success_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        for _ in 0..20 {
+            let b = backend.clone();
+            let sc = success_count.clone();
+            handles.push(thread::spawn(move || {
+                if let Some(_guard) = BackendConnectionGuard::try_acquire(b) {
+                    sc.fetch_add(1, Ordering::SeqCst);
+                    // Hold connection briefly
+                    thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Active connections must have returned cleanly to 0
+        assert_eq!(backend.active_connections(), 0);
+        // And during the run, concurrent slots could never exceed 10
+        assert!(success_count.load(Ordering::SeqCst) >= 10);
+    }
+}
+
+

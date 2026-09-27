@@ -449,6 +449,14 @@ fn build_dataplane_state(cfg: &NexusConfig) -> anyhow::Result<(DataplaneState, V
         }
     }
 
+    let h2_pool = Arc::new(nexuslb_proxy::H2ConnectionPool::default());
+    let h2_config = nexuslb_proxy::H2Config {
+        max_concurrent_streams: cfg.limits.h2_max_concurrent_streams,
+        connect_timeout: std::time::Duration::from_secs(5),
+        stream_chunk_timeout: std::time::Duration::from_secs(cfg.limits.h2_stream_timeout_secs),
+        response_timeout: std::time::Duration::from_secs(cfg.limits.h2_stream_timeout_secs),
+    };
+
     let state = DataplaneState {
         router,
         rate_limiter,
@@ -457,6 +465,8 @@ fn build_dataplane_state(cfg: &NexusConfig) -> anyhow::Result<(DataplaneState, V
         retry_policy,
         tls_acceptor,
         http_cache,
+        h2_pool,
+        h2_config,
         access_logger,
         filter_chain: Arc::new(filter_chain),
         redirect_http_to_https: cfg.tls.redirect_http_to_https,

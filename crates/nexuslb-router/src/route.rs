@@ -7,12 +7,89 @@ pub enum PathMatch {
     Any,
 }
 
+#[inline(always)]
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h1), Some(h2)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                decoded.push((h1 << 4) | h2);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+/// Canonicalize HTTP request paths by resolving '.', '..', duplicate slashes,
+/// decoding percent-encoded traversal sequences (RFC 3986 / CWE-22), and stripping query/fragment.
+pub fn normalize_path(raw_path: &str) -> String {
+    let path_only = raw_path.split('?').next().unwrap_or(raw_path);
+    let path_only = path_only.split('#').next().unwrap_or(path_only);
+
+    let mut current = path_only.to_string();
+    for _ in 0..2 {
+        let next = percent_decode(&current);
+        if next == current {
+            break;
+        }
+        current = next;
+    }
+
+    let mut segments = Vec::new();
+    for seg in current.split('/') {
+        let s = seg.trim();
+        match s {
+            "" | "." => continue,
+            ".." => {
+                segments.pop();
+            }
+            valid => segments.push(valid),
+        }
+    }
+
+    let mut normalized = String::with_capacity(current.len() + 1);
+    normalized.push('/');
+    normalized.push_str(&segments.join("/"));
+    normalized
+}
+
 impl PathMatch {
     #[inline(always)]
     pub fn matches(&self, path: &str) -> bool {
         match self {
-            PathMatch::Exact(expected) => path == expected,
-            PathMatch::Prefix(prefix) => path.starts_with(prefix),
+            PathMatch::Exact(expected) => {
+                let norm = normalize_path(path);
+                let exp_norm = normalize_path(expected);
+                norm == exp_norm
+            }
+            PathMatch::Prefix(prefix) => {
+                let norm = normalize_path(path);
+                let pref_norm = normalize_path(prefix);
+                if pref_norm == "/" {
+                    true
+                } else if norm == pref_norm {
+                    true
+                } else if let Some(remainder) = norm.strip_prefix(&pref_norm) {
+                    remainder.starts_with('/') || remainder.is_empty()
+                } else {
+                    false
+                }
+            }
             PathMatch::Any => true,
         }
     }
@@ -146,5 +223,40 @@ mod tests {
         assert!(matcher_dot.matches("corp.internal"));
         assert!(matcher_dot.matches("auth.corp.internal"));
         assert!(!matcher_dot.matches("fakecorp.internal"));
+    }
+
+    #[test]
+    fn test_path_match_query_and_fragment_normalization() {
+        let exact = PathMatch::Exact("/api/v1/users".to_string());
+        assert!(exact.matches("/api/v1/users"));
+        assert!(exact.matches("/api/v1/users?page=1&limit=10"));
+        assert!(exact.matches("/api/v1/users#section2"));
+        assert!(exact.matches("/api/v1/users?redirect=/admin#top"));
+        assert!(!exact.matches("/api/v1/users/create"));
+
+        let prefix = PathMatch::Prefix("/static".to_string());
+        assert!(prefix.matches("/static/app.js"));
+        assert!(prefix.matches("/static/bundle.css?v=1.2.3"));
+        assert!(!prefix.matches("/other/path"));
+    }
+
+    #[test]
+    fn test_path_match_traversal_and_slash_normalization() {
+        let prefix = PathMatch::Prefix("/admin".to_string());
+        // Traversal and duplicate slash attacks must normalize and match correctly
+        assert!(prefix.matches("//admin/dashboard"));
+        assert!(prefix.matches("/public/../admin/users"));
+        assert!(prefix.matches("/api/%2e%2e/admin"));
+        assert!(prefix.matches("/%61dmin/settings"));
+
+        // Non-matching paths must not match
+        assert!(!prefix.matches("/administrator"));
+        assert!(!prefix.matches("/public/user"));
+
+        let exact = PathMatch::Exact("/api/secret".to_string());
+        assert!(exact.matches("//api//secret"));
+        assert!(exact.matches("/v1/../api/secret?param=val"));
+        assert!(exact.matches("/api/%2e%2e/api/secret#anchor"));
+        assert!(!exact.matches("/api/secret/extra"));
     }
 }

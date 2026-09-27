@@ -49,7 +49,33 @@ impl ServiceDiscoveryProvider for FileCatalogDiscovery {
 
     async fn discover(&self) -> anyhow::Result<Vec<DiscoveredInstance>> {
         trace!(path = %self.path.display(), "Reading discovery catalog file");
-        let content = tokio::fs::read_to_string(&self.path).await?;
+        const MAX_CATALOG_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+        let metadata = tokio::fs::metadata(&self.path).await?;
+        if !metadata.is_file() {
+            anyhow::bail!(
+                "Discovery catalog path {} is not a regular file (special character devices and pipes are not permitted)",
+                self.path.display()
+            );
+        }
+        if metadata.len() > MAX_CATALOG_FILE_SIZE {
+            anyhow::bail!(
+                "Discovery catalog file {} exceeds maximum permitted size ({} bytes > 10MB)",
+                self.path.display(),
+                metadata.len()
+            );
+        }
+
+        use tokio::io::AsyncReadExt;
+        let file = tokio::fs::File::open(&self.path).await?;
+        let mut content = String::new();
+        let mut reader = file.take(MAX_CATALOG_FILE_SIZE + 1);
+        reader.read_to_string(&mut content).await?;
+        if content.len() as u64 > MAX_CATALOG_FILE_SIZE {
+            anyhow::bail!(
+                "Discovery catalog file {} exceeded maximum permitted size (10MB)",
+                self.path.display()
+            );
+        }
 
         let items: Vec<CatalogItem> = if self.path.extension().and_then(|e| e.to_str())
             == Some("yaml")

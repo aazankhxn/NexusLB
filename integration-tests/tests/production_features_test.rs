@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -49,6 +50,8 @@ fn create_test_state(pool_name: &str, redirect_http: bool) -> DataplaneState {
         retry_policy,
         tls_acceptor: None,
         http_cache,
+        h2_pool: Arc::new(nexuslb_proxy::H2ConnectionPool::default()),
+        h2_config: nexuslb_proxy::H2Config::default(),
         access_logger: Arc::new(access_logger),
         filter_chain: Arc::new(FilterChain::new()),
         redirect_http_to_https: redirect_http,
@@ -140,8 +143,9 @@ async fn test_hot_reload_admin_api() {
 
 #[tokio::test]
 async fn test_jwt_and_rewrite_filter_pipeline() {
+    let secret = b"super-secret-key-999";
     let mut chain = FilterChain::new();
-    chain.add_filter(Arc::new(JwtAuthFilter::new("/protected")));
+    chain.add_filter(Arc::new(JwtAuthFilter::new("/protected").with_secret(&secret[..])));
 
     let rewrite = HeaderRewriteFilter::new()
         .with_request_header("X-Injected-By", "NexusLB-Proxy")
@@ -182,9 +186,18 @@ async fn test_jwt_and_rewrite_filter_pipeline() {
     // Case 3: Protected path with valid JWT token passes through
     let mut method = "GET".to_string();
     let mut path = "/protected/dashboard".to_string();
+
+    let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"sub\":\"1234567890\"}");
+    let unsigned = format!("{}.{}", header, payload);
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, secret);
+    let tag = ring::hmac::sign(&key, unsigned.as_bytes());
+    let sig = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(tag.as_ref());
+    let valid_token = format!("{}.{}", unsigned, sig);
+
     let mut headers = vec![(
         "Authorization".to_string(),
-        "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozGzV".to_string(),
+        format!("Bearer {}", valid_token),
     )];
     let action = chain.execute_request(&mut method, &mut path, &mut headers);
     assert_eq!(action, nexuslb_wasm::FilterAction::Continue);
@@ -403,6 +416,8 @@ async fn test_tls_termination_and_sni_resolution() {
         retry_policy,
         tls_acceptor: Some(tls_acceptor),
         http_cache,
+        h2_pool: Arc::new(nexuslb_proxy::H2ConnectionPool::default()),
+        h2_config: nexuslb_proxy::H2Config::default(),
         access_logger: Arc::new(access_logger),
         filter_chain: Arc::new(FilterChain::new()),
         redirect_http_to_https: false,

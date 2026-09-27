@@ -16,6 +16,8 @@ pub struct DataplaneState {
     pub retry_policy: RetryPolicy,
     pub tls_acceptor: Option<TlsAcceptor>,
     pub http_cache: Arc<nexuslb_cache::HttpCache>,
+    pub h2_pool: Arc<nexuslb_proxy::H2ConnectionPool>,
+    pub h2_config: nexuslb_proxy::H2Config,
     pub access_logger: Arc<nexuslb_observability::AccessLogger>,
     pub filter_chain: Arc<nexuslb_wasm::FilterChain>,
     pub redirect_http_to_https: bool,

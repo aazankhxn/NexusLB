@@ -179,48 +179,79 @@ impl NexusFilter for JwtAuthFilter {
                 }
 
                 // SECURITY: Validate JWT header algorithm to block algorithm confusion attacks.
-                // Only HS256 is supported; reject alg=none, RS256, etc.
-                if let Some(header_bytes) = Self::decode_b64(parts[0]) {
-                    #[derive(serde::Deserialize)]
-                    struct JwtHeader {
-                        #[serde(default)]
-                        alg: Option<String>,
+                // Fail-closed defense: reject malformed base64 or JSON headers immediately.
+                let header_bytes = match Self::decode_b64(parts[0]) {
+                    Some(b) => b,
+                    None => {
+                        return FilterAction::StopAndReply {
+                            status: 401,
+                            headers: vec![
+                                ("Content-Type".to_string(), "application/json".to_string()),
+                                (
+                                    "WWW-Authenticate".to_string(),
+                                    "Bearer error=\"invalid_token\"".to_string(),
+                                ),
+                            ],
+                            body: b"{\"error\":\"Malformed JWT header encoding\"}\n".to_vec(),
+                        };
                     }
-                    if let Ok(header) = serde_json::from_slice::<JwtHeader>(&header_bytes) {
-                        match header.alg.as_deref() {
-                            Some("HS256") => {} // Only accepted algorithm
-                            Some("none") | None => {
-                                return FilterAction::StopAndReply {
-                                    status: 401,
-                                    headers: vec![
-                                        ("Content-Type".to_string(), "application/json".to_string()),
-                                        (
-                                            "WWW-Authenticate".to_string(),
-                                            "Bearer error=\"invalid_token\"".to_string(),
-                                        ),
-                                    ],
-                                    body: b"{\"error\":\"JWT algorithm 'none' is not permitted\"}\n"
-                                        .to_vec(),
-                                };
-                            }
-                            Some(alg) => {
-                                let msg = format!(
-                                    "{{\"error\":\"Unsupported JWT algorithm: {}. Only HS256 is accepted.\"}}\n",
-                                    alg.chars().take(16).collect::<String>() // Truncate to prevent log injection
-                                );
-                                return FilterAction::StopAndReply {
-                                    status: 401,
-                                    headers: vec![
-                                        ("Content-Type".to_string(), "application/json".to_string()),
-                                        (
-                                            "WWW-Authenticate".to_string(),
-                                            "Bearer error=\"invalid_token\"".to_string(),
-                                        ),
-                                    ],
-                                    body: msg.into_bytes(),
-                                };
-                            }
-                        }
+                };
+
+                #[derive(serde::Deserialize)]
+                struct JwtHeader {
+                    #[serde(default)]
+                    alg: Option<String>,
+                }
+
+                let header = match serde_json::from_slice::<JwtHeader>(&header_bytes) {
+                    Ok(h) => h,
+                    Err(_) => {
+                        return FilterAction::StopAndReply {
+                            status: 401,
+                            headers: vec![
+                                ("Content-Type".to_string(), "application/json".to_string()),
+                                (
+                                    "WWW-Authenticate".to_string(),
+                                    "Bearer error=\"invalid_token\"".to_string(),
+                                ),
+                            ],
+                            body: b"{\"error\":\"Malformed JWT header JSON\"}\n".to_vec(),
+                        };
+                    }
+                };
+
+                match header.alg.as_deref() {
+                    Some("HS256") => {} // Only accepted algorithm
+                    Some("none") | None => {
+                        return FilterAction::StopAndReply {
+                            status: 401,
+                            headers: vec![
+                                ("Content-Type".to_string(), "application/json".to_string()),
+                                (
+                                    "WWW-Authenticate".to_string(),
+                                    "Bearer error=\"invalid_token\"".to_string(),
+                                ),
+                            ],
+                            body: b"{\"error\":\"JWT algorithm 'none' is not permitted\"}\n"
+                                .to_vec(),
+                        };
+                    }
+                    Some(alg) => {
+                        let msg = format!(
+                            "{{\"error\":\"Unsupported JWT algorithm: {}. Only HS256 is accepted.\"}}\n",
+                            alg.chars().take(16).collect::<String>() // Truncate to prevent log injection
+                        );
+                        return FilterAction::StopAndReply {
+                            status: 401,
+                            headers: vec![
+                                ("Content-Type".to_string(), "application/json".to_string()),
+                                (
+                                    "WWW-Authenticate".to_string(),
+                                    "Bearer error=\"invalid_token\"".to_string(),
+                                ),
+                            ],
+                            body: msg.into_bytes(),
+                        };
                     }
                 }
 
@@ -264,9 +295,19 @@ impl NexusFilter for JwtAuthFilter {
                         }
                     }
                     None => {
-                        // In unverified mode (no secret configured, e.g., in test harnesses or
-                        // downstream services where upstream API gateway already verified signature),
-                        // cryptographic verification is omitted, but alg=none is still rejected above.
+                        // Fail-closed defense: If no secret is configured on a protected path,
+                        // reject all incoming tokens with 401 rather than allowing unverified access.
+                        return FilterAction::StopAndReply {
+                            status: 401,
+                            headers: vec![
+                                ("Content-Type".to_string(), "application/json".to_string()),
+                                (
+                                    "WWW-Authenticate".to_string(),
+                                    "Bearer error=\"invalid_token\", error_description=\"JWT verification secret not configured\"".to_string(),
+                                ),
+                            ],
+                            body: b"{\"error\":\"JWT verification secret not configured on load balancer\"}\n".to_vec(),
+                        };
                     }
                 }
 
@@ -393,14 +434,37 @@ mod tests {
     }
 
     #[test]
-    fn test_jwt_filter_allows_valid_bearer() {
-        let filter = JwtAuthFilter::new("/api/secure");
+    fn test_jwt_filter_rejects_when_secret_unset() {
+        let filter = JwtAuthFilter::new("/api/secure"); // No secret configured
         let mut method = "GET".to_string();
         let mut path = "/api/secure/data".to_string();
-        let dummy_payload = URL_SAFE_NO_PAD.encode(b"{}");
+        let mut headers = vec![("Authorization".to_string(), "Bearer header.payload.signature".to_string())];
+
+        let action = filter.on_request(&mut method, &mut path, &mut headers);
+        match action {
+            FilterAction::StopAndReply { status, .. } => assert_eq!(status, 401),
+            _ => panic!("Expected 401 fail-closed when secret is missing"),
+        }
+    }
+
+    #[test]
+    fn test_jwt_filter_allows_valid_bearer() {
+        let secret = b"unit-test-secret-key-12345";
+        let filter = JwtAuthFilter::new("/api/secure").with_secret(&secret[..]);
+        let mut method = "GET".to_string();
+        let mut path = "/api/secure/data".to_string();
+
+        let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+        let payload = URL_SAFE_NO_PAD.encode(b"{\"sub\":\"alice\"}");
+        let unsigned = format!("{}.{}", header, payload);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+        let tag = hmac::sign(&key, unsigned.as_bytes());
+        let sig = URL_SAFE_NO_PAD.encode(tag.as_ref());
+        let valid_token = format!("{}.{}", unsigned, sig);
+
         let mut headers = vec![(
             "Authorization".to_string(),
-            format!("Bearer header.{}.sig", dummy_payload),
+            format!("Bearer {}", valid_token),
         )];
 
         let action = filter.on_request(&mut method, &mut path, &mut headers);
@@ -408,6 +472,9 @@ mod tests {
         assert!(headers
             .iter()
             .any(|(k, v)| k == "X-User-Id" && v == "authenticated-user"));
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == "X-Auth-Subject" && v == "alice"));
     }
 
     #[test]
@@ -489,7 +556,8 @@ mod tests {
 
     #[test]
     fn test_jwt_filter_malformed_payload_and_crlf_defense() {
-        let filter = JwtAuthFilter::new("/api/secure");
+        let secret = b"unit-test-crlf-key-12345";
+        let filter = JwtAuthFilter::new("/api/secure").with_secret(&secret[..]);
 
         // 1. Malformed base64 payload must be rejected
         let malformed_b64 = "eyJhbGciOiJIUzI1NiJ9.!!!not-base64!!!.sig";
@@ -502,9 +570,15 @@ mod tests {
             _ => panic!("Malformed base64 payload must be rejected with 401"),
         }
 
-        // 2. Non-JSON payload must be rejected
+        // 2. Non-JSON payload must be rejected (with valid signature so it reaches payload parsing)
+        let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
         let non_json_b64 = URL_SAFE_NO_PAD.encode(b"this is plain text not json");
-        let non_json_token = format!("eyJhbGciOiJIUzI1NiJ9.{}.sig", non_json_b64);
+        let unsigned = format!("{}.{}", header, non_json_b64);
+        let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+        let tag = hmac::sign(&key, unsigned.as_bytes());
+        let sig = URL_SAFE_NO_PAD.encode(tag.as_ref());
+        let non_json_token = format!("{}.{}", unsigned, sig);
+
         let mut headers2 = vec![("Authorization".to_string(), format!("Bearer {}", non_json_token))];
         let action2 = filter.on_request(&mut method, &mut path, &mut headers2);
         match action2 {
@@ -515,7 +589,11 @@ mod tests {
         // 3. CRLF in claims subject must be stripped to prevent HTTP response/header splitting
         let crlf_payload = r#"{"sub":"admin\r\nX-Injected: attack"}"#;
         let crlf_b64 = URL_SAFE_NO_PAD.encode(crlf_payload.as_bytes());
-        let crlf_token = format!("eyJhbGciOiJIUzI1NiJ9.{}.sig", crlf_b64);
+        let unsigned_crlf = format!("{}.{}", header, crlf_b64);
+        let tag_crlf = hmac::sign(&key, unsigned_crlf.as_bytes());
+        let sig_crlf = URL_SAFE_NO_PAD.encode(tag_crlf.as_ref());
+        let crlf_token = format!("{}.{}", unsigned_crlf, sig_crlf);
+
         let mut headers3 = vec![("Authorization".to_string(), format!("Bearer {}", crlf_token))];
         let action3 = filter.on_request(&mut method, &mut path, &mut headers3);
         assert_eq!(action3, FilterAction::Continue);

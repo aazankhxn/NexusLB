@@ -5,6 +5,7 @@ use tokio::net::TcpStream;
 use tracing::{debug, trace, warn};
 
 use crate::state::SharedDataplaneState;
+use nexuslb_core::backend::BackendConnectionGuard;
 use nexuslb_metrics::WorkerMetrics;
 use nexuslb_proxy::{H2Proxy, HttpProxy, TcpProxy};
 use nexuslb_scheduler::traits::SelectionContext;
@@ -15,6 +16,12 @@ pub enum DetectedProtocol {
     Http,
     Http2,
     RawTcp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolState {
+    Decided(DetectedProtocol),
+    NeedMoreData,
 }
 
 pub struct DataplanePipeline;
@@ -36,6 +43,14 @@ impl DataplanePipeline {
             return;
         }
 
+        // 1b. Global server connection capacity check (prevent socket descriptor exhaustion)
+        const MAX_DATAPLANE_CONNECTIONS: i64 = 100_000;
+        if metrics.active_connections.load(std::sync::atomic::Ordering::Relaxed) >= MAX_DATAPLANE_CONNECTIONS {
+            metrics.inc_dropped_connections();
+            let _ = client.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: 32\r\n\r\nServer connection limit reached\n").await;
+            return;
+        }
+
         metrics.inc_connections();
         struct ConnectionGuard(Arc<WorkerMetrics>);
         impl Drop for ConnectionGuard {
@@ -45,15 +60,38 @@ impl DataplanePipeline {
         }
         let _guard = ConnectionGuard(metrics.clone());
 
-        // 2. Read initial bytes directly into pooled buffer (zero MSG_PEEK overhead)
+        // 2. Read initial bytes directly into pooled buffer with streaming protocol detection (Issue #3)
+        // Guarded by probe timeout to prevent Slowloris connection pool exhaustion
+        const CLIENT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
         let mut read_buf = current_state.buffer_pool.acquire();
-        let read_n = match client.read(&mut read_buf[..]).await {
-            Ok(n) if n > 0 => n,
-            _ => return, // Client disconnected or error
-        };
+        let mut read_n = 0;
+        let probe_result = tokio::time::timeout(CLIENT_PROBE_TIMEOUT, async {
+            loop {
+                let n = match client.read(&mut read_buf[read_n..]).await {
+                    Ok(n) if n > 0 => n,
+                    _ => return None, // Client disconnected or error
+                };
+                read_n += n;
+                metrics.add_bytes_received(n as u64);
 
-        metrics.add_bytes_received(read_n as u64);
-        let protocol = Self::detect_protocol(&read_buf[..read_n]);
+                match Self::inspect_protocol(&read_buf[..read_n]) {
+                    ProtocolState::Decided(proto) => return Some(proto),
+                    ProtocolState::NeedMoreData => {
+                        // Maximum 24 bytes needed to distinguish all protocols (e.g. PRI * HTTP/2.0)
+                        if read_n >= 24 {
+                            return Some(DetectedProtocol::RawTcp);
+                        }
+                        continue;
+                    }
+                }
+            }
+        })
+        .await;
+
+        let protocol = match probe_result {
+            Ok(Some(proto)) => proto,
+            _ => return, // Timed out or error
+        };
 
         match protocol {
             DetectedProtocol::Http => {
@@ -83,38 +121,56 @@ impl DataplanePipeline {
                 if let Some(ref acceptor) = current_state.tls_acceptor {
                     let prefixed =
                         nexuslb_network::PrefixedStream::new(read_buf[..read_n].to_vec(), client);
-                    match acceptor.accept(prefixed).await {
-                        Ok(mut tls_stream) => {
+                    match tokio::time::timeout(CLIENT_PROBE_TIMEOUT, acceptor.accept(prefixed)).await {
+                        Ok(Ok(mut tls_stream)) => {
                             trace!("Terminated TLS handshake successfully");
                             let mut inner_buf = current_state.buffer_pool.acquire();
-                            let inner_n = match tls_stream.read(&mut inner_buf[..]).await {
-                                Ok(n) if n > 0 => n,
-                                _ => return,
-                            };
-                            let inner_proto = Self::detect_protocol(&inner_buf[..inner_n]);
-                            match inner_proto {
-                                DetectedProtocol::Http2 => {
-                                    // HTTP/2 stream over TLS
-                                    let pool = current_state
-                                        .router
-                                        .default_pool()
-                                        .or_else(|| current_state.router.pools().values().next());
-                                    if let Some(pool) = pool {
-                                        let ctx = SelectionContext::with_ip(client_addr.ip());
-                                        if let Some(b) = pool.select(&ctx) {
-                                            let prefixed_tls = nexuslb_network::PrefixedStream::new(
-                                                inner_buf[..inner_n].to_vec(),
-                                                tls_stream,
-                                            );
-                                            let _ = H2Proxy::handle_connection(
-                                                prefixed_tls,
-                                                client_addr,
-                                                b,
-                                                metrics,
-                                            )
-                                            .await;
+                            let mut inner_n = 0;
+                            let inner_probe = tokio::time::timeout(CLIENT_PROBE_TIMEOUT, async {
+                                loop {
+                                    let n = match tls_stream.read(&mut inner_buf[inner_n..]).await {
+                                        Ok(n) if n > 0 => n,
+                                        _ => return None,
+                                    };
+                                    inner_n += n;
+                                    match Self::inspect_protocol(&inner_buf[..inner_n]) {
+                                        ProtocolState::Decided(proto) => return Some(proto),
+                                        ProtocolState::NeedMoreData => {
+                                            if inner_n >= 24 {
+                                                return Some(DetectedProtocol::Http);
+                                            }
+                                            continue;
                                         }
                                     }
+                                }
+                            })
+                            .await;
+
+                            let inner_proto = match inner_probe {
+                                Ok(Some(proto)) => proto,
+                                _ => return,
+                            };
+
+                            match inner_proto {
+                                DetectedProtocol::Http2 => {
+                                    // HTTP/2 stream over TLS: stream-level routing & multiplexing (Issues #1, #2, #10)
+                                    let prefixed_tls = nexuslb_network::PrefixedStream::new(
+                                        inner_buf[..inner_n].to_vec(),
+                                        tls_stream,
+                                    );
+                                    let _ = H2Proxy::handle_connection(
+                                        prefixed_tls,
+                                        client_addr,
+                                        current_state.router.clone(),
+                                        current_state.h2_pool.clone(),
+                                        metrics,
+                                        current_state.h2_config.clone(),
+                                        current_state.access_logger.clone(),
+                                        current_state.filter_chain.clone(),
+                                        current_state.rate_limiter.clone(),
+                                        true,
+                                    )
+                                    .await;
                                 }
                                 _ => {
                                     // Default HTTP/1.1 over TLS
@@ -131,8 +187,11 @@ impl DataplanePipeline {
                                 }
                             }
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             debug!(error = %e, "TLS handshake failed");
+                        }
+                        Err(_) => {
+                            debug!("TLS handshake timed out");
                         }
                     }
                 } else {
@@ -145,45 +204,142 @@ impl DataplanePipeline {
         }
     }
 
+    /// Streaming state machine to handle fragmented inputs under TCP semantics (Issue #3)
     #[inline(always)]
-    pub fn detect_protocol(peek: &[u8]) -> DetectedProtocol {
+    pub fn inspect_protocol(peek: &[u8]) -> ProtocolState {
         if peek.is_empty() {
-            return DetectedProtocol::RawTcp;
+            return ProtocolState::NeedMoreData;
         }
 
-        // Direct first-byte dispatch: eliminates loop over 8 prefixes
         match peek[0] {
             0x16 => {
-                // TLS ClientHello: 0x16 0x03 0x0X
-                if peek.len() >= 3 && peek[1] == 0x03 {
-                    return DetectedProtocol::Tls;
+                // TLS ClientHello record: 0x16 0x03 [0x00..=0x04]
+                if peek.len() < 3 {
+                    return ProtocolState::NeedMoreData;
                 }
-                DetectedProtocol::RawTcp
+                if peek[1] == 0x03 && peek[2] <= 0x04 {
+                    ProtocolState::Decided(DetectedProtocol::Tls)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
             }
             b'P' => {
-                if peek.starts_with(b"PRI * HTTP/2.0") {
-                    DetectedProtocol::Http2
-                } else if peek.len() >= 4 && (peek[1] == b'O' || peek[1] == b'U' || peek[1] == b'A')
+                // Could be HTTP/2 prior-knowledge ("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+                // or HTTP/1 methods: POST, PUT, PATCH
+                if peek.len() < 4 {
+                    if b"PRI * HTTP/2.0".starts_with(peek)
+                        || b"POST ".starts_with(peek)
+                        || b"PUT ".starts_with(peek)
+                        || b"PATCH ".starts_with(peek)
+                    {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+
+                if peek.starts_with(b"PRI ") {
+                    if peek.len() < 14 {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    if peek.starts_with(b"PRI * HTTP/2.0") {
+                        ProtocolState::Decided(DetectedProtocol::Http2)
+                    } else {
+                        ProtocolState::Decided(DetectedProtocol::RawTcp)
+                    }
+                } else if peek.starts_with(b"POST ")
+                    || peek.starts_with(b"PUT ")
+                    || peek.starts_with(b"PATCH ")
                 {
-                    // POST, PUT, PATCH
-                    DetectedProtocol::Http
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else if peek.len() < 6
+                    && (b"PATCH ".starts_with(peek) || b"POST ".starts_with(peek))
+                {
+                    ProtocolState::NeedMoreData
                 } else {
-                    DetectedProtocol::RawTcp
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
                 }
             }
-            b'G' => DetectedProtocol::Http, // GET
-            b'H' => DetectedProtocol::Http, // HEAD
-            b'D' => DetectedProtocol::Http, // DELETE
-            b'O' => DetectedProtocol::Http, // OPTIONS
-            b'C' => DetectedProtocol::Http, // CONNECT
-            _ => DetectedProtocol::RawTcp,
+            b'G' => {
+                if peek.len() < 4 {
+                    if b"GET ".starts_with(peek) {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+                if peek.starts_with(b"GET ") {
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
+            }
+            b'H' => {
+                if peek.len() < 5 {
+                    if b"HEAD ".starts_with(peek) {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+                if peek.starts_with(b"HEAD ") {
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
+            }
+            b'D' => {
+                if peek.len() < 7 {
+                    if b"DELETE ".starts_with(peek) {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+                if peek.starts_with(b"DELETE ") {
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
+            }
+            b'O' => {
+                if peek.len() < 8 {
+                    if b"OPTIONS ".starts_with(peek) {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+                if peek.starts_with(b"OPTIONS ") {
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
+            }
+            b'C' => {
+                if peek.len() < 8 {
+                    if b"CONNECT ".starts_with(peek) {
+                        return ProtocolState::NeedMoreData;
+                    }
+                    return ProtocolState::Decided(DetectedProtocol::RawTcp);
+                }
+                if peek.starts_with(b"CONNECT ") {
+                    ProtocolState::Decided(DetectedProtocol::Http)
+                } else {
+                    ProtocolState::Decided(DetectedProtocol::RawTcp)
+                }
+            }
+            _ => ProtocolState::Decided(DetectedProtocol::RawTcp),
+        }
+    }
+
+    #[inline(always)]
+    pub fn detect_protocol(peek: &[u8]) -> DetectedProtocol {
+        match Self::inspect_protocol(peek) {
+            ProtocolState::Decided(proto) => proto,
+            ProtocolState::NeedMoreData => DetectedProtocol::RawTcp,
         }
     }
 
     /// Handle HTTP/1.1 or HTTP/2 client stream with strict authoritative parsing.
     #[allow(clippy::too_many_arguments)]
     async fn handle_http<S>(
-        mut client: S,
+        client: S,
         client_addr: SocketAddr,
         state: &crate::state::DataplaneState,
         metrics: Arc<WorkerMetrics>,
@@ -193,59 +349,11 @@ impl DataplanePipeline {
     ) where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        // Parse request line / Host header from initial read to evaluate routing rules
-        let mut headers = [httparse::EMPTY_HEADER; 32];
-        let mut req = httparse::Request::new(&mut headers);
-        let (method, path, host) = if let Ok(httparse::Status::Complete(_))
-        | Ok(httparse::Status::Partial) =
-            req.parse(&read_buf[..initial_read])
-        {
-            let m = req.method;
-            let p = req.path.unwrap_or("/");
-            let h = req
-                .headers
-                .iter()
-                .find(|hdr| hdr.name.eq_ignore_ascii_case("host"))
-                .and_then(|hdr| std::str::from_utf8(hdr.value).ok());
-            (m, p, h)
-        } else {
-            (None, "/", None)
-        };
-
-        // Match against routing table: first check configured routes, then default pool
-        let pool = state
-            .router
-            .route(host, path, method, None, None)
-            .map(|(_route, pool)| pool)
-            .or_else(|| state.router.default_pool())
-            .or_else(|| state.router.pools().values().next());
-
-        let pool = match pool {
-            Some(p) => p,
-            None => {
-                warn!("No backend pool configured in router");
-                return;
-            }
-        };
-
-        let ctx = SelectionContext::with_ip(client_addr.ip());
-        let backend = match pool.select(&ctx) {
-            Some(b) => b,
-            None => {
-                metrics.inc_backend_errors();
-                warn!(pool = %pool.name, "No healthy backend available in pool");
-                let _ = client
-                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 63\r\n\r\n{\"error\":\"Service Unavailable\",\"message\":\"No backends available\"}\n")
-                    .await;
-                return;
-            }
-        };
-
-        metrics.inc_backend_requests();
         let _ = HttpProxy::handle_connection(
-            &mut client,
+            client,
             client_addr,
-            backend,
+            state.router.clone(),
+            state.rate_limiter.clone(),
             state.conn_pool.clone(),
             metrics,
             state.buffer_pool.clone(),
@@ -259,8 +367,6 @@ impl DataplanePipeline {
             state.redirect_http_to_https,
         )
         .await;
-
-        let _ = client.shutdown().await;
     }
 
     async fn handle_http2<S>(
@@ -271,31 +377,19 @@ impl DataplanePipeline {
     ) where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        let pool = state
-            .router
-            .default_pool()
-            .or_else(|| state.router.pools().values().next());
-
-        let pool = match pool {
-            Some(p) => p,
-            None => {
-                warn!("No backend pool configured in router for HTTP/2");
-                return;
-            }
-        };
-
-        let ctx = SelectionContext::with_ip(client_addr.ip());
-        let backend = match pool.select(&ctx) {
-            Some(b) => b,
-            None => {
-                metrics.inc_backend_errors();
-                return;
-            }
-        };
-
-        metrics.inc_backend_requests();
-        let _ =
-            nexuslb_proxy::H2Proxy::handle_connection(client, client_addr, backend, metrics).await;
+        let _ = nexuslb_proxy::H2Proxy::handle_connection(
+            client,
+            client_addr,
+            state.router.clone(),
+            state.h2_pool.clone(),
+            metrics,
+            state.h2_config.clone(),
+            state.access_logger.clone(),
+            state.filter_chain.clone(),
+            state.rate_limiter.clone(),
+            false,
+        )
+        .await;
     }
 
     async fn handle_tcp<S>(
@@ -329,6 +423,15 @@ impl DataplanePipeline {
             }
         };
 
+        let _guard = match BackendConnectionGuard::try_acquire(backend.clone()) {
+            Some(g) => g,
+            None => {
+                metrics.inc_backend_errors();
+                warn!(backend = %backend.name(), "Backend connection limit reached (max_connections)");
+                return;
+            }
+        };
+
         metrics.inc_backend_requests();
         match state
             .conn_pool
@@ -339,16 +442,81 @@ impl DataplanePipeline {
                 let _ = TcpProxy::forward(
                     client,
                     upstream,
-                    backend,
+                    backend.clone(),
                     metrics,
                     state.buffer_pool.clone(),
                 )
                 .await;
+                state.conn_pool.dec_active(backend.id());
             }
             Err(e) => {
                 metrics.inc_backend_errors();
                 debug!(backend = %backend.name(), error = %e, "Failed to connect to upstream");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fragmented_protocol_detection_issue_3() {
+        // 1. Fragmented TLS ClientHello (Issue #3)
+        // 1 byte: 0x16 alone MUST NOT be assumed RawTcp
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(&[0x16]),
+            ProtocolState::NeedMoreData
+        );
+        // 2 bytes: 0x16 0x03 still needs version minor byte
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(&[0x16, 0x03]),
+            ProtocolState::NeedMoreData
+        );
+        // 3 bytes: 0x16 0x03 0x01 (TLS 1.0) -> Decided TLS
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(&[0x16, 0x03, 0x01]),
+            ProtocolState::Decided(DetectedProtocol::Tls)
+        );
+        // 3 bytes: 0x16 0x03 0x03 (TLS 1.2 / 1.3) -> Decided TLS
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(&[0x16, 0x03, 0x03]),
+            ProtocolState::Decided(DetectedProtocol::Tls)
+        );
+
+        // 2. Fragmented HTTP/2 prior knowledge preface
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"P"),
+            ProtocolState::NeedMoreData
+        );
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"PRI * "),
+            ProtocolState::NeedMoreData
+        );
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"),
+            ProtocolState::Decided(DetectedProtocol::Http2)
+        );
+
+        // 3. Fragmented HTTP/1.1 methods
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"G"),
+            ProtocolState::NeedMoreData
+        );
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"GET "),
+            ProtocolState::Decided(DetectedProtocol::Http)
+        );
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"POST /api HTTP/1.1"),
+            ProtocolState::Decided(DetectedProtocol::Http)
+        );
+
+        // 4. Raw TCP non-matching protocol (e.g. SSH, MySQL)
+        assert_eq!(
+            DataplanePipeline::inspect_protocol(b"SSH-2.0-OpenSSH"),
+            ProtocolState::Decided(DetectedProtocol::RawTcp)
+        );
     }
 }

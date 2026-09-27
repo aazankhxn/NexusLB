@@ -163,7 +163,9 @@ impl ConnectionPool {
         };
 
         if let Some(backend_pool) = backend_pool {
-            backend_pool.active_count.fetch_sub(1, Ordering::Relaxed);
+            let _ = backend_pool.active_count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(1))
+            });
 
             let now = Instant::now();
             // Lock-free push to ArrayQueue — no mutex contention
@@ -181,7 +183,9 @@ impl ConnectionPool {
     pub fn dec_active(&self, id: BackendId) {
         let read = self.pools.read();
         if let Some(pool) = read.get(&id) {
-            pool.active_count.fetch_sub(1, Ordering::Relaxed);
+            let _ = pool.active_count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(1))
+            });
         }
     }
 

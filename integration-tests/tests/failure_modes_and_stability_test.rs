@@ -8,7 +8,9 @@ use tokio::net::{TcpListener, TcpStream};
 use nexuslb_api::AdminServer;
 use nexuslb_config::{AdminAuthConfig, AdminConfig, NexusConfig};
 use nexuslb_core::backend::Backend;
-use nexuslb_core::types::{AlgorithmType, BackendAddress, BackendId, BackendState, CircuitState, Protocol};
+use nexuslb_core::types::{
+    AlgorithmType, BackendAddress, BackendId, BackendState, CircuitState, Protocol,
+};
 use nexuslb_dataplane::{DataplanePipeline, DataplaneState, SharedDataplaneState};
 use nexuslb_metrics::{GlobalMetrics, WorkerMetrics};
 use nexuslb_network::{BufferPool, ConnectionPool, ConnectionPoolConfig};
@@ -17,7 +19,15 @@ use nexuslb_proxy::retry::RetryPolicy;
 use nexuslb_router::{PoolGroup, Router};
 
 // Helper: Setup in-process proxy listener hooked to a given backend address
-async fn setup_test_proxy(backend_addr: std::net::SocketAddr, retry_policy: RetryPolicy) -> (std::net::SocketAddr, Arc<Backend>, Arc<SharedDataplaneState>, Arc<WorkerMetrics>) {
+async fn setup_test_proxy(
+    backend_addr: std::net::SocketAddr,
+    retry_policy: RetryPolicy,
+) -> (
+    std::net::SocketAddr,
+    Arc<Backend>,
+    Arc<SharedDataplaneState>,
+    Arc<WorkerMetrics>,
+) {
     let backend = Arc::new(Backend::new(
         BackendId::new(1),
         "test-backend-1",
@@ -60,16 +70,12 @@ async fn setup_test_proxy(backend_addr: std::net::SocketAddr, retry_policy: Retr
     let m_clone = metrics.clone();
 
     tokio::spawn(async move {
-        loop {
-            if let Ok((stream, client_addr)) = listener.accept().await {
-                let s = s_clone.clone();
-                let m = m_clone.clone();
-                tokio::spawn(async move {
-                    DataplanePipeline::process_connection(stream, client_addr, s, m).await;
-                });
-            } else {
-                break;
-            }
+        while let Ok((stream, client_addr)) = listener.accept().await {
+            let s = s_clone.clone();
+            let m = m_clone.clone();
+            tokio::spawn(async move {
+                DataplanePipeline::process_connection(stream, client_addr, s, m).await;
+            });
         }
     });
 
@@ -94,7 +100,10 @@ async fn test_case_1_slow_client_disconnect_resilience() {
 
     // Ensure the proxy continues accepting subsequent connections cleanly
     let mut healthy_client = TcpStream::connect(proxy_addr).await.unwrap();
-    healthy_client.write_all(b"GET /status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    healthy_client
+        .write_all(b"GET /status HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
 
     // Mock backend responds to the healthy request
     let (mut backend_stream, _) = mock_listener.accept().await.unwrap();
@@ -104,7 +113,10 @@ async fn test_case_1_slow_client_disconnect_resilience() {
     let mut buf = vec![0u8; 512];
     let n = healthy_client.read(&mut buf).await.unwrap();
     let resp_str = String::from_utf8_lossy(&buf[..n]);
-    assert!(resp_str.contains("200 OK"), "Proxy must stay healthy after slowloris disconnect");
+    assert!(
+        resp_str.contains("200 OK"),
+        "Proxy must stay healthy after slowloris disconnect"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -117,17 +129,27 @@ async fn test_case_2_upstream_connection_refused_error_handling() {
     let dead_backend_addr = unused_listener.local_addr().unwrap();
     drop(unused_listener); // Port is now closed and refusing connections
 
-    let (proxy_addr, backend, _, metrics) = setup_test_proxy(dead_backend_addr, RetryPolicy::default()).await;
+    let (proxy_addr, backend, _, metrics) =
+        setup_test_proxy(dead_backend_addr, RetryPolicy::default()).await;
 
     let mut client = TcpStream::connect(proxy_addr).await.unwrap();
-    client.write_all(b"GET /api/test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    client
+        .write_all(b"GET /api/test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
 
     let mut buf = Vec::new();
     let _ = client.read_to_end(&mut buf).await;
 
     // The proxy should gracefully catch the connect failure without crashing
-    assert!(backend.stats().total_errors() > 0, "Backend errors must be tracked on connection refused");
-    assert!(metrics.backend_errors_total.load(Ordering::Relaxed) > 0, "Worker metrics must record backend errors");
+    assert!(
+        backend.stats().total_errors() > 0,
+        "Backend errors must be tracked on connection refused"
+    );
+    assert!(
+        metrics.backend_errors_total.load(Ordering::Relaxed) > 0,
+        "Worker metrics must record backend errors"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -144,7 +166,11 @@ async fn test_case_3_fuzzed_malformed_http_inputs() {
             tokio::spawn(async move {
                 let mut buf = [0u8; 1024];
                 let _ = b_stream.read(&mut buf).await;
-                let _ = b_stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPONG").await;
+                let _ = b_stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nPONG",
+                    )
+                    .await;
             });
         }
     });
@@ -152,11 +178,11 @@ async fn test_case_3_fuzzed_malformed_http_inputs() {
     let (proxy_addr, _, _, _) = setup_test_proxy(backend_addr, RetryPolicy::default()).await;
 
     let malformed_payloads: Vec<&[u8]> = vec![
-        b"", // Empty stream
-        b"\r\n\r\n", // Bare newlines
-        b"\xFF\xFE\x00\x01\x02\x03\x04\x05GARBAGE", // Binary fuzz garbage
-        b"GET / HTTP/9.9\r\nHost: localhost\r\n\r\n", // Corrupt HTTP version
-        b"GET / HTTP/1.1\r\nContent-Length: -500\r\n\r\n", // Negative Content-Length
+        b"",                                                      // Empty stream
+        b"\r\n\r\n",                                              // Bare newlines
+        b"\xFF\xFE\x00\x01\x02\x03\x04\x05GARBAGE",               // Binary fuzz garbage
+        b"GET / HTTP/9.9\r\nHost: localhost\r\n\r\n",             // Corrupt HTTP version
+        b"GET / HTTP/1.1\r\nContent-Length: -500\r\n\r\n",        // Negative Content-Length
         b"GET /test\x00path HTTP/1.1\r\nHost: localhost\r\n\r\n", // Null byte in path
     ];
 
@@ -172,12 +198,18 @@ async fn test_case_3_fuzzed_malformed_http_inputs() {
 
     // Verify proxy is still completely stable and functional after receiving fuzzing payloads
     let mut check_client = TcpStream::connect(proxy_addr).await.unwrap();
-    check_client.write_all(b"GET /ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    check_client
+        .write_all(b"GET /ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
 
     let mut buf = vec![0u8; 512];
     let n = check_client.read(&mut buf).await.unwrap();
     let resp_str = String::from_utf8_lossy(&buf[..n]);
-    assert!(resp_str.contains("200 OK"), "Proxy must survive malformed and fuzzed inputs");
+    assert!(
+        resp_str.contains("200 OK"),
+        "Proxy must survive malformed and fuzzed inputs"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -189,7 +221,8 @@ async fn test_case_4_circuit_breaker_cascade_isolation() {
     let backend_addr = mock_listener.local_addr().unwrap();
     drop(mock_listener); // Simulate dead backend
 
-    let (proxy_addr, backend, state, _) = setup_test_proxy(backend_addr, RetryPolicy::default()).await;
+    let (proxy_addr, backend, state, _) =
+        setup_test_proxy(backend_addr, RetryPolicy::default()).await;
 
     let cb_config = nexuslb_health::circuit::CircuitBreakerConfig {
         failure_threshold: 3,
@@ -204,7 +237,9 @@ async fn test_case_4_circuit_breaker_cascade_isolation() {
     // Send requests that fail to connect to dead backend, propagating failures to circuit breaker
     for _ in 0..3 {
         let mut client = TcpStream::connect(proxy_addr).await.unwrap();
-        let _ = client.write_all(b"GET /fail HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await;
+        let _ = client
+            .write_all(b"GET /fail HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await;
         let mut buf = Vec::new();
         let _ = client.read_to_end(&mut buf).await;
         cb.on_failure(&backend);
@@ -212,13 +247,19 @@ async fn test_case_4_circuit_breaker_cascade_isolation() {
 
     // Circuit breaker state must now be Open to prevent cascading failure
     assert_eq!(backend.circuit_state(), CircuitState::Open);
-    assert!(!backend.is_available(), "Tripped backend must be marked unavailable");
+    assert!(
+        !backend.is_available(),
+        "Tripped backend must be marked unavailable"
+    );
 
     // Router selection must exclude the tripped backend
     let ctx = nexuslb_scheduler::traits::SelectionContext::default();
     let loaded = state.load();
     let pool = loaded.router.default_pool().unwrap();
-    assert!(pool.select(&ctx).is_none(), "Pool selection must refuse to route to tripped backend");
+    assert!(
+        pool.select(&ctx).is_none(),
+        "Pool selection must refuse to route to tripped backend"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -317,7 +358,8 @@ async fn test_case_6_admin_api_security_failure_modes() {
         metrics,
         shared_state,
         config,
-    ).with_reloader(reloader);
+    )
+    .with_reloader(reloader);
 
     tokio::spawn(async move {
         let _ = admin.run().await;
@@ -328,11 +370,17 @@ async fn test_case_6_admin_api_security_failure_modes() {
     // Subtest A: Unauthenticated request to /metrics must be rejected with 401
     {
         let mut stream = TcpStream::connect(admin_addr).await.unwrap();
-        stream.write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+        stream
+            .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf);
-        assert!(resp.contains("401 Unauthorized"), "Protected endpoint must reject unauthenticated request");
+        assert!(
+            resp.contains("401 Unauthorized"),
+            "Protected endpoint must reject unauthenticated request"
+        );
     }
 
     // Subtest B: Tampered / Wrong token must be rejected with 401
@@ -342,7 +390,10 @@ async fn test_case_6_admin_api_security_failure_modes() {
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf);
-        assert!(resp.contains("401 Unauthorized"), "Wrong token must be rejected with 401");
+        assert!(
+            resp.contains("401 Unauthorized"),
+            "Wrong token must be rejected with 401"
+        );
     }
 
     // Subtest C: Read token attempting a mutation endpoint (POST /reload) must be rejected with 403 Forbidden
@@ -353,7 +404,10 @@ async fn test_case_6_admin_api_security_failure_modes() {
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf);
-        assert!(resp.contains("403 Forbidden"), "Read token must be denied mutation privileges (RBAC)");
+        assert!(
+            resp.contains("403 Forbidden"),
+            "Read token must be denied mutation privileges (RBAC)"
+        );
     }
 
     // Subtest D: Valid mutation token succeeds with 200 OK
@@ -376,8 +430,14 @@ async fn test_case_6_admin_api_security_failure_modes() {
         stream.read_to_end(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf);
         assert!(resp.contains("200 OK"));
-        assert!(resp.contains("[REDACTED]"), "Config API must redact secrets");
-        assert!(!resp.contains("secure-admin-token-12345"), "Config API must NEVER expose cleartext admin tokens");
+        assert!(
+            resp.contains("[REDACTED]"),
+            "Config API must redact secrets"
+        );
+        assert!(
+            !resp.contains("secure-admin-token-12345"),
+            "Config API must NEVER expose cleartext admin tokens"
+        );
     }
 }
 
@@ -424,7 +484,11 @@ async fn test_case_7_pipelined_keepalive_stability() {
         let mut resp_buf = vec![0u8; 512];
         let n = client.read(&mut resp_buf).await.unwrap();
         let resp_str = String::from_utf8_lossy(&resp_buf[..n]);
-        assert!(resp_str.contains("200 OK"), "Pipelined request {} must return 200 OK", i);
+        assert!(
+            resp_str.contains("200 OK"),
+            "Pipelined request {} must return 200 OK",
+            i
+        );
         assert!(resp_str.contains(&format!("Pipeline-Response-{}", i)));
     }
 }

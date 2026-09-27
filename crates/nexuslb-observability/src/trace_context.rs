@@ -57,13 +57,17 @@ impl TraceContext {
             .unwrap_or_default()
             .as_nanos() as u64;
 
+        let random_entropy: u64 = rand::random();
+        let mixed = counter.wrapping_mul(0x9E3779B97F4A7C15) ^ random_entropy;
+
         let mut trace_id = [0u8; 16];
         trace_id[0..8].copy_from_slice(&now_nanos.to_be_bytes());
-        trace_id[8..16].copy_from_slice(&counter.to_be_bytes());
+        trace_id[8..16].copy_from_slice(&mixed.to_be_bytes());
 
         let mut span_id = [0u8; 8];
-        let span_val = counter.wrapping_mul(0x9E3779B97F4A7C15);
-        span_id.copy_from_slice(&(if span_val == 0 { 1u64 } else { span_val }).to_be_bytes());
+        let random_span: u64 = rand::random();
+        let span_val = if random_span == 0 { 1u64 } else { random_span };
+        span_id.copy_from_slice(&span_val.to_be_bytes());
 
         let flags = if sampled { 0x01 } else { 0x00 };
 
@@ -78,10 +82,10 @@ impl TraceContext {
     /// Spawn a downstream child trace context preserving trace_id and flags, but generating a new span_id
     #[inline(always)]
     pub fn new_child(&self) -> Self {
-        let counter = GLOBAL_TRACE_COUNTER.fetch_add(1, Ordering::Relaxed);
         let mut span_id = [0u8; 8];
-        let span_val = counter.wrapping_mul(0x517cc1b727220a95);
-        span_id.copy_from_slice(&(if span_val == 0 { 1u64 } else { span_val }).to_be_bytes());
+        let random_span: u64 = rand::random();
+        let span_val = if random_span == 0 { 1u64 } else { random_span };
+        span_id.copy_from_slice(&span_val.to_be_bytes());
 
         Self {
             version: self.version,
@@ -145,7 +149,9 @@ impl TraceContext {
     #[inline(always)]
     pub fn to_header_value(&self) -> String {
         let bytes = format_traceparent(self.version, &self.trace_id, &self.span_id, self.flags);
-        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+        std::str::from_utf8(&bytes)
+            .expect("traceparent format is valid ASCII")
+            .to_string()
     }
 
     pub fn trace_id_hex(&self) -> String {
@@ -170,7 +176,9 @@ fn hex_encode_16(bytes: &[u8; 16]) -> String {
         out[i * 2] = HEX_CHARS[(b >> 4) as usize];
         out[i * 2 + 1] = HEX_CHARS[(b & 0x0f) as usize];
     }
-    unsafe { String::from_utf8_unchecked(out.to_vec()) }
+    std::str::from_utf8(&out)
+        .expect("hex characters are valid ASCII")
+        .to_string()
 }
 
 #[inline(always)]
@@ -180,7 +188,9 @@ fn hex_encode_8(bytes: &[u8; 8]) -> String {
         out[i * 2] = HEX_CHARS[(b >> 4) as usize];
         out[i * 2 + 1] = HEX_CHARS[(b & 0x0f) as usize];
     }
-    unsafe { String::from_utf8_unchecked(out.to_vec()) }
+    std::str::from_utf8(&out)
+        .expect("hex characters are valid ASCII")
+        .to_string()
 }
 
 #[cfg(test)]

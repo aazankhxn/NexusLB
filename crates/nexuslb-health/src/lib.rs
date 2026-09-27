@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod checker;
 pub mod circuit;
 pub mod drain;

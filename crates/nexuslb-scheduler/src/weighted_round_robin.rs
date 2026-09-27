@@ -36,6 +36,10 @@ impl Scheduler for WeightedRoundRobinScheduler {
         }
 
         let mut state = self.state.lock();
+        if state.len() > backends.len() * 2 {
+            state.retain(|id, _| backends.iter().any(|b| b.id() == *id));
+        }
+
         let mut total_weight = 0i64;
         let mut best_backend: Option<&Arc<Backend>> = None;
         let mut max_weight = i64::MIN;

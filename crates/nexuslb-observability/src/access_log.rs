@@ -1,4 +1,4 @@
-use crossbeam::channel::{bounded, Receiver, Sender};
+use crossbeam::channel::{bounded, Receiver, RecvTimeoutError, Sender};
 use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::{self, BufWriter, Write};
@@ -126,7 +126,7 @@ impl AccessLogger {
                     },
                 };
 
-                while running_clone.load(Ordering::Relaxed) || !rx.is_empty() {
+                while running_clone.load(Ordering::Acquire) || !rx.is_empty() {
                     match rx.recv_timeout(Duration::from_millis(100)) {
                         Ok(entry) => {
                             let line = match format {
@@ -135,8 +135,12 @@ impl AccessLogger {
                             };
                             let _ = writeln!(writer, "{}", line);
                         }
-                        Err(_) => {
+                        Err(RecvTimeoutError::Timeout) => {
                             let _ = writer.flush();
+                        }
+                        Err(RecvTimeoutError::Disconnected) => {
+                            // All senders dropped, drain and terminate worker thread
+                            break;
                         }
                     }
                 }
@@ -166,5 +170,32 @@ impl AccessLogger {
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+}
+
+impl Drop for AccessLogger {
+    fn drop(&mut self) {
+        self._running.store(false, Ordering::Release);
+        // Explicitly drop channel sender to wake up and exit worker thread immediately
+        self.tx.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_access_logger_thread_shutdown_on_drop() {
+        let (logger, handle) = AccessLogger::new(true, "json", "stdout");
+        assert!(logger.is_enabled());
+        let handle = handle.expect("worker thread handle must exist");
+
+        // Dropping logger must signal thread to exit
+        drop(logger);
+
+        // Joining must finish promptly without leaking thread
+        let res = handle.join();
+        assert!(res.is_ok(), "AccessLogger worker thread should cleanly terminate");
     }
 }

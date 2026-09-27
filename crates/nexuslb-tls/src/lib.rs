@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod cert;
 pub mod config;
 pub mod mtls;

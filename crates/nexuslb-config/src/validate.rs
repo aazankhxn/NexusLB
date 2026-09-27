@@ -101,13 +101,24 @@ pub fn validate_config(config: &NexusConfig) -> Result<(), String> {
         })?;
     }
 
-    // 7. Validate admin address
+    // 7. Validate admin address and security
     if config.admin.enabled {
         config
             .admin
             .address
             .parse::<SocketAddr>()
             .map_err(|e| format!("Invalid admin address '{}': {}", config.admin.address, e))?;
+
+        if config.admin.authentication.required {
+            match &config.admin.token {
+                None => return Err("Admin API is enabled with authentication required, but no admin.token is configured. Set a secure token or set admin.authentication.required: false (NOT recommended).".to_string()),
+                Some(t) if t.trim().is_empty() => return Err("Admin API token cannot be empty when authentication is required.".to_string()),
+                Some(t) if t == "nexuslb-admin-secret-change-in-production" => {
+                    return Err("Admin API is using insecure default placeholder token. Set a secure secret token in production.".to_string());
+                }
+                _ => {}
+            }
+        }
     }
 
     Ok(())

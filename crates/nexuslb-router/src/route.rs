@@ -32,7 +32,11 @@ impl HostMatch {
         let host_no_port = host.split(':').next().unwrap_or(host);
         match self {
             HostMatch::Exact(expected) => host_no_port.eq_ignore_ascii_case(expected),
-            HostMatch::Suffix(suffix) => host_no_port.to_ascii_lowercase().ends_with(suffix),
+            HostMatch::Suffix(suffix) => {
+                let norm_suffix = suffix.trim_start_matches('.').to_ascii_lowercase();
+                let host_lower = host_no_port.to_ascii_lowercase();
+                host_lower == norm_suffix || host_lower.ends_with(&format!(".{}", norm_suffix))
+            }
             HostMatch::Any => true,
         }
     }
@@ -114,5 +118,33 @@ impl Route {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_match_suffix_boundary_defense() {
+        let matcher = HostMatch::Suffix("example.com".to_string());
+
+        // Valid subdomains & exact domain
+        assert!(matcher.matches("example.com"));
+        assert!(matcher.matches("api.example.com"));
+        assert!(matcher.matches("sub.service.example.com"));
+        assert!(matcher.matches("API.EXAMPLE.COM:8080"));
+
+        // Malicious domain suffix attacks MUST be rejected
+        assert!(!matcher.matches("evilexample.com"));
+        assert!(!matcher.matches("not-example.com"));
+        assert!(!matcher.matches("attacker_example.com"));
+        assert!(!matcher.matches("badexample.com:443"));
+
+        // Leading dot suffix definition also works correctly
+        let matcher_dot = HostMatch::Suffix(".corp.internal".to_string());
+        assert!(matcher_dot.matches("corp.internal"));
+        assert!(matcher_dot.matches("auth.corp.internal"));
+        assert!(!matcher_dot.matches("fakecorp.internal"));
     }
 }

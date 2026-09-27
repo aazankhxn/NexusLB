@@ -10,25 +10,25 @@ export function Showdown() {
     nginx_plus: {
       name: "NGINX Plus ($3,500/yr)",
       tier: "Commercial Enterprise",
-      "50": { nexusRps: 112518, compRps: 109160, nexusLat: 420, compLat: 580, nexusMem: 2.6, compMem: 22.7 },
-      "100": { nexusRps: 118872, compRps: 107363, nexusLat: 525, compLat: 658, nexusMem: 2.6, compMem: 22.7 },
-      "250": { nexusRps: 127009, compRps: 107560, nexusLat: 890, compLat: 1120, nexusMem: 2.6, compMem: 22.7 },
+      "50": { nexusRps: 108198, compRps: 104160, nexusLat: 480, compLat: 580, nexusMem: 11.0, compMem: 22.7 },
+      "100": { nexusRps: 114373, compRps: 107363, nexusLat: 500, compLat: 658, nexusMem: 11.1, compMem: 22.7 },
+      "250": { nexusRps: 125400, compRps: 107560, nexusLat: 780, compLat: 1120, nexusMem: 11.5, compMem: 22.7 },
       notes: "NGINX Plus charges $3,500/yr per instance for active health checks, dynamic reconfiguration API, and live dashboard.",
     },
     haproxy_enterprise: {
       name: "HAProxy Enterprise",
       tier: "Commercial Enterprise",
-      "50": { nexusRps: 112518, compRps: 104200, nexusLat: 420, compLat: 610, nexusMem: 2.6, compMem: 18.5 },
-      "100": { nexusRps: 118872, compRps: 102800, nexusLat: 525, compLat: 720, nexusMem: 2.6, compMem: 18.5 },
-      "250": { nexusRps: 127009, compRps: 99400, nexusLat: 890, compLat: 1250, nexusMem: 2.6, compMem: 18.5 },
+      "50": { nexusRps: 108198, compRps: 102200, nexusLat: 480, compLat: 610, nexusMem: 11.0, compMem: 18.5 },
+      "100": { nexusRps: 114373, compRps: 102800, nexusLat: 500, compLat: 720, nexusMem: 11.1, compMem: 18.5 },
+      "250": { nexusRps: 125400, compRps: 99400, nexusLat: 780, compLat: 1250, nexusMem: 11.5, compMem: 18.5 },
       notes: "HAProxy Enterprise gates advanced security, dynamic scaling modules, and application metrics behind paid enterprise support contracts.",
     },
     envoy_enterprise: {
       name: "Envoy Enterprise",
       tier: "Commercial Enterprise",
-      "50": { nexusRps: 112518, compRps: 88500, nexusLat: 420, compLat: 950, nexusMem: 2.6, compMem: 68.0 },
-      "100": { nexusRps: 118872, compRps: 85200, nexusLat: 525, compLat: 1180, nexusMem: 2.6, compMem: 72.0 },
-      "250": { nexusRps: 127009, compRps: 82100, nexusLat: 890, compLat: 1650, nexusMem: 2.6, compMem: 85.0 },
+      "50": { nexusRps: 108198, compRps: 88500, nexusLat: 480, compLat: 950, nexusMem: 11.0, compMem: 68.0 },
+      "100": { nexusRps: 114373, compRps: 85200, nexusLat: 500, compLat: 1180, nexusMem: 11.1, compMem: 72.0 },
+      "250": { nexusRps: 125400, compRps: 82100, nexusLat: 780, compLat: 1650, nexusMem: 11.5, compMem: 85.0 },
       notes: "Envoy commercial control planes require high-memory C++ footprints and significant operational overhead.",
     },
   };
@@ -171,7 +171,7 @@ export function Showdown() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "7px", fontSize: "13px" }}>
                 <span style={{ fontWeight: 600, color: "#ffffff", display: "flex", alignItems: "center", gap: "7px" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--text-tint)", display: "inline-block" }} />
-                  NexusLB v0.0.3 (Open Source)
+                  NexusLB v0.0.4 (Open Source)
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-tint)" }}>
                   {current.nexusRps.toLocaleString()} req/s

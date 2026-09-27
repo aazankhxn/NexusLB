@@ -28,9 +28,17 @@ impl TokioEngine {
         state: Arc<SharedDataplaneState>,
         metrics: Arc<GlobalMetrics>,
         socket_config: SocketConfig,
+        max_connections: usize,
     ) -> Result<()> {
         info!("Initializing NexusLB Tokio I/O engine");
-        let mut manager = RuntimeManager::new(workers, listeners, state, metrics, socket_config);
+        let mut manager = RuntimeManager::new(
+            workers,
+            listeners,
+            state,
+            metrics,
+            socket_config,
+            max_connections,
+        );
         manager.start();
         self.manager = Some(manager);
         Ok(())

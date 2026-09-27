@@ -11,6 +11,9 @@ pub struct DiscoveryManager {
     cached_instances: Arc<RwLock<HashMap<SocketAddr, DiscoveredInstance>>>,
 }
 
+/// Maximum number of discovered instances cached to prevent memory exhaustion from rogue providers.
+const MAX_CACHED_DISCOVERY_INSTANCES: usize = 10_000;
+
 impl DiscoveryManager {
     pub fn new() -> Self {
         Self {
@@ -40,6 +43,15 @@ impl DiscoveryManager {
                     error!(provider = provider.name(), error = %e, "Service discovery refresh failed");
                 }
             }
+        }
+
+        if all_instances.len() > MAX_CACHED_DISCOVERY_INSTANCES {
+            tracing::warn!(
+                total = all_instances.len(),
+                max = MAX_CACHED_DISCOVERY_INSTANCES,
+                "Discovered instance count exceeds safety limit, truncating to prevent memory exhaustion"
+            );
+            all_instances.truncate(MAX_CACHED_DISCOVERY_INSTANCES);
         }
 
         let mut cache = self.cached_instances.write().await;

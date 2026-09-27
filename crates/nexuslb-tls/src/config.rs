@@ -14,6 +14,9 @@ impl TlsConfigBuilder {
         // Enable ALPN for HTTP/2 and HTTP/1.1
         server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
+        // Enable TLS 1.3 session resumption tickets for low-latency handshakes
+        server_config.send_tls13_tickets = 4;
+
         Ok(TlsAcceptor::from(Arc::new(server_config)))
     }
 
@@ -27,6 +30,9 @@ impl TlsConfigBuilder {
 
         // Enable ALPN for HTTP/2 and HTTP/1.1
         server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+        // Enable TLS 1.3 session resumption tickets
+        server_config.send_tls13_tickets = 4;
 
         Ok(TlsAcceptor::from(Arc::new(server_config)))
     }

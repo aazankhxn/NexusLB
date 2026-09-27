@@ -44,5 +44,5 @@ data:
       address: "0.0.0.0:9090"
 
     admin:
-      enabled: true
+      enabled: false
       address: "0.0.0.0:9091"

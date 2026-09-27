@@ -108,8 +108,13 @@ impl ServiceDiscoveryProvider for KubernetesEndpointsDiscovery {
         // In local/test environments or mock clusters, falls back to DNS lookup of the k8s service domain
         let k8s_dns = format!("{}.{}.svc.cluster.local", self.service_name, self.namespace);
         let port = 8080;
-        let instances = match tokio::net::lookup_host(format!("{}:{}", k8s_dns, port)).await {
-            Ok(addrs) => addrs
+        let instances = match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio::net::lookup_host(format!("{}:{}", k8s_dns, port)),
+        )
+        .await
+        {
+            Ok(Ok(addrs)) => addrs
                 .enumerate()
                 .map(|(idx, addr)| DiscoveredInstance {
                     name: format!("{}-{}", self.service_name, idx + 1),
@@ -119,7 +124,7 @@ impl ServiceDiscoveryProvider for KubernetesEndpointsDiscovery {
                     tags: HashMap::new(),
                 })
                 .collect(),
-            Err(_) => {
+            _ => {
                 debug!(service = %self.service_name, "K8s cluster DNS not reachable in local test mode; returning 0 instances");
                 Vec::new()
             }

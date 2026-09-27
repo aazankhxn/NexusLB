@@ -8,6 +8,17 @@ use nexuslb_core::backend::Backend;
 use nexuslb_metrics::WorkerMetrics;
 use nexuslb_network::{BufferPool, SpliceEngine};
 
+struct ConnGuard(Arc<Backend>);
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        self.0.stats().dec_active_connections();
+    }
+}
+
+/// Maximum duration for a TCP/WebSocket session before forced termination.
+/// Prevents indefinite connection slot consumption from idle or malicious sessions.
+const MAX_TCP_SESSION_DURATION: std::time::Duration = std::time::Duration::from_secs(3600); // 1 hour
+
 pub struct TcpProxy;
 
 impl TcpProxy {
@@ -20,12 +31,22 @@ impl TcpProxy {
     ) -> std::io::Result<()> {
         let start = Instant::now();
         backend.stats().inc_active_connections();
+        let _guard = ConnGuard(backend.clone());
 
-        let res = splice_engine
-            .splice_bidirectional(&mut client, &mut upstream)
-            .await;
+        let res = match tokio::time::timeout(
+            MAX_TCP_SESSION_DURATION,
+            splice_engine.splice_bidirectional(&mut client, &mut upstream),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "TCP splice session exceeded max duration (1h)",
+            )),
+        };
 
-        backend.stats().dec_active_connections();
+        drop(_guard);
 
         match res {
             Ok(stats) => {
@@ -69,6 +90,7 @@ impl TcpProxy {
     {
         let start = Instant::now();
         backend.stats().inc_active_connections();
+        let _guard = ConnGuard(backend.clone());
 
         let (mut client_read, mut client_write) = tokio::io::split(client);
         let (mut upstream_read, mut upstream_write) = tokio::io::split(upstream);
@@ -111,9 +133,19 @@ impl TcpProxy {
             Ok::<u64, std::io::Error>(total_bytes)
         };
 
-        let res = tokio::try_join!(client_to_upstream, upstream_to_client);
+        let copy_fut = async {
+            tokio::try_join!(client_to_upstream, upstream_to_client)
+        };
 
-        backend.stats().dec_active_connections();
+        let res = match tokio::time::timeout(MAX_TCP_SESSION_DURATION, copy_fut).await {
+            Ok(r) => r,
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "TCP proxy session exceeded max duration (1h)",
+            )),
+        };
+
+        drop(_guard);
 
         match res {
             Ok((bytes_in, bytes_out)) => {

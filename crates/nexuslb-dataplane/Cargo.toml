@@ -22,4 +22,5 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 arc-swap = { workspace = true }
 bytes = { workspace = true }
+httparse = { workspace = true }
 tracing = { workspace = true }

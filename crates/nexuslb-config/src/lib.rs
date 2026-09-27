@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod duration;
 pub mod model;
 pub mod validate;

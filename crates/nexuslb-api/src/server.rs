@@ -1,8 +1,10 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{info, trace};
+use tokio::sync::Semaphore;
+use tracing::{info, trace, warn};
 
 use nexuslb_config::NexusConfig;
 use nexuslb_dataplane::SharedDataplaneState;
@@ -11,14 +13,26 @@ use nexuslb_metrics::GlobalMetrics;
 
 pub type ReloadHandler = Arc<dyn Fn() -> Result<String, String> + Send + Sync>;
 
+/// Maximum concurrent admin API connections to prevent resource exhaustion.
+const MAX_ADMIN_CONNECTIONS: usize = 16;
+
+/// Read timeout for admin API requests to prevent slowloris attacks.
+const ADMIN_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Constant-time byte comparison to eliminate side-channel timing attacks.
+/// Unlike naive implementations, this does NOT early-return on length mismatch,
+/// preventing attackers from discovering the expected token length via timing.
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
+    // XOR fold with length-independent traversal:
+    // We iterate max(a.len(), b.len()) times, reading 0x00 for the shorter input
+    // beyond its boundary. The length difference itself is folded into `diff` using usize
+    // to prevent modulo-256 truncation vulnerabilities.
+    let max_len = a.len().max(b.len());
+    let mut diff: usize = a.len() ^ b.len();
+    for i in 0..max_len {
+        let byte_a = if i < a.len() { a[i] as usize } else { 0 };
+        let byte_b = if i < b.len() { b[i] as usize } else { 0 };
+        diff |= byte_a ^ byte_b;
     }
     diff == 0
 }
@@ -60,7 +74,7 @@ impl AdminServer {
 
     pub async fn run(self) -> std::io::Result<()> {
         let listener = TcpListener::bind(self.addr).await?;
-        info!(address = %self.addr, "Admin API listening with secure authentication");
+        info!(address = %self.addr, max_concurrent = MAX_ADMIN_CONNECTIONS, "Admin API listening with secure authentication");
 
         let metrics = self.metrics.clone();
         let state = self.state.clone();
@@ -68,9 +82,23 @@ impl AdminServer {
         let mutation_token = self.mutation_token.clone();
         let config = self.config.clone();
         let reload_handler = self.reload_handler.clone();
+        let semaphore = Arc::new(Semaphore::new(MAX_ADMIN_CONNECTIONS));
 
         loop {
             let (stream, client_addr) = listener.accept().await?;
+
+            // Enforce connection limit to prevent admin API resource exhaustion
+            let permit = match semaphore.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    warn!(client = %client_addr, "Admin API connection limit reached, rejecting");
+                    // Best-effort rejection response
+                    let mut s = stream;
+                    let _ = s.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 25\r\nConnection: close\r\n\r\nToo many admin connections").await;
+                    continue;
+                }
+            };
+
             let metrics = metrics.clone();
             let state = state.clone();
             let token = token.clone();
@@ -79,6 +107,7 @@ impl AdminServer {
             let reload_handler = reload_handler.clone();
 
             tokio::spawn(async move {
+                let _permit = permit; // RAII: released when task completes
                 if let Err(e) = Self::handle_client(
                     stream,
                     client_addr,
@@ -122,70 +151,103 @@ impl AdminServer {
         config: Arc<NexusConfig>,
         reload_handler: Option<ReloadHandler>,
     ) -> std::io::Result<()> {
-        let mut buf = [0u8; 4096];
-        let n = stream.read(&mut buf).await?;
-        if n == 0 {
-            return Ok(());
-        }
+        let mut buf = [0u8; 8192];
+        let mut total_read = 0;
 
-        let mut headers = [httparse::EMPTY_HEADER; 32];
-        let mut req = httparse::Request::new(&mut headers);
+        let (method, path) = loop {
+            let n = match tokio::time::timeout(ADMIN_READ_TIMEOUT, stream.read(&mut buf[total_read..])).await {
+                Ok(Ok(n)) if n > 0 => n,
+                Ok(Ok(_)) => {
+                    if total_read == 0 {
+                        return Ok(()); // Client disconnected cleanly before sending data
+                    }
+                    let resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 17\r\n\r\nTruncated Request";
+                    stream.write_all(resp.as_bytes()).await?;
+                    return Ok(());
+                }
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    trace!("Admin API read timed out after {:?}", ADMIN_READ_TIMEOUT);
+                    return Ok(());
+                }
+            };
+            total_read += n;
 
-        let (method, path) = match req.parse(&buf[..n]) {
-            Ok(httparse::Status::Complete(_)) => {
-                let method = req.method.unwrap_or("GET");
-                let path = req.path.unwrap_or("/");
+            let mut headers = [httparse::EMPTY_HEADER; 64];
+            let mut req = httparse::Request::new(&mut headers);
+            match req.parse(&buf[..total_read]) {
+                Ok(httparse::Status::Complete(_)) => {
+                    let method = req.method.unwrap_or("GET");
+                    let path = req.path.unwrap_or("/");
 
-                let is_mutation = method.eq_ignore_ascii_case("POST")
-                    || method.eq_ignore_ascii_case("PUT")
-                    || method.eq_ignore_ascii_case("DELETE");
+                    let is_mutation = method.eq_ignore_ascii_case("POST")
+                        || method.eq_ignore_ascii_case("PUT")
+                        || method.eq_ignore_ascii_case("DELETE");
 
-                let is_health_probe = (path == "/health" || path == "/ready")
-                    && config.admin.authentication.allow_unauthenticated_health;
+                    let is_health_probe = (method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD"))
+                        && (path == "/health" || path == "/ready")
+                        && config.admin.authentication.allow_unauthenticated_health;
 
-                // Check authorization when required
-                if !is_health_probe && config.admin.authentication.required {
-                    let provided_token = Self::extract_bearer_token(req.headers);
+                    // Check authorization when required
+                    if !is_health_probe && config.admin.authentication.required {
+                        let provided_token = Self::extract_bearer_token(req.headers);
 
-                    match provided_token {
-                        None => {
-                            let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Authorization header required\"}\n";
-                            stream.write_all(resp.as_bytes()).await?;
-                            return Ok(());
-                        }
-                        Some(token_str) => {
-                            let target_expected = if is_mutation {
-                                mutation_token.as_ref().or(expected_token.as_ref())
-                            } else {
-                                expected_token.as_ref().or(mutation_token.as_ref())
-                            };
-
-                            let authorized = match target_expected {
-                                Some(expected) => {
-                                    constant_time_eq(token_str.as_bytes(), expected.as_bytes())
-                                }
-                                None => false,
-                            };
-
-                            if !authorized {
-                                let resp = if is_mutation {
-                                    "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Insufficient mutation privileges\"}\n"
-                                } else {
-                                    "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 31\r\n\r\n{\"error\":\"Invalid admin token\"}\n"
-                                };
+                        match provided_token {
+                            None => {
+                                let resp = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Authorization header required\"}\n";
                                 stream.write_all(resp.as_bytes()).await?;
                                 return Ok(());
                             }
+                            Some(token_str) => {
+                                let authorized = if is_mutation {
+                                    let target_expected = mutation_token.as_ref().or(expected_token.as_ref());
+                                    match target_expected {
+                                        Some(expected) => constant_time_eq(token_str.as_bytes(), expected.as_bytes()),
+                                        None => false,
+                                    }
+                                } else {
+                                    let mut ok = false;
+                                    if let Some(ref exp) = expected_token {
+                                        if constant_time_eq(token_str.as_bytes(), exp.as_bytes()) {
+                                            ok = true;
+                                        }
+                                    }
+                                    if let Some(ref mut_exp) = mutation_token {
+                                        if constant_time_eq(token_str.as_bytes(), mut_exp.as_bytes()) {
+                                            ok = true;
+                                        }
+                                    }
+                                    ok
+                                };
+
+                                if !authorized {
+                                    let resp = if is_mutation {
+                                        "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n{\"error\":\"Insufficient mutation privileges\"}\n"
+                                    } else {
+                                        "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 31\r\n\r\n{\"error\":\"Invalid admin token\"}\n"
+                                    };
+                                    stream.write_all(resp.as_bytes()).await?;
+                                    return Ok(());
+                                }
+                            }
                         }
                     }
-                }
 
-                (method.to_string(), path.to_string())
-            }
-            _ => {
-                let resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\n\r\nBad Request";
-                stream.write_all(resp.as_bytes()).await?;
-                return Ok(());
+                    break (method.to_string(), path.to_string());
+                }
+                Ok(httparse::Status::Partial) => {
+                    if total_read >= buf.len() {
+                        let resp = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 26\r\n\r\nHeaders exceed max buffer";
+                        stream.write_all(resp.as_bytes()).await?;
+                        return Ok(());
+                    }
+                    // Continue reading next chunk
+                }
+                Err(_) => {
+                    let resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\n\r\nBad Request";
+                    stream.write_all(resp.as_bytes()).await?;
+                    return Ok(());
+                }
             }
         };
 
@@ -260,7 +322,7 @@ impl AdminServer {
                     )
                 }
             }
-            ("POST", p) if p.ends_with("/drain") => {
+            ("POST", p) if p.starts_with("/backends/") && p.ends_with("/drain") => {
                 let id_part = &p["/backends/".len()..p.len() - "/drain".len()];
                 let current_state = state.load();
                 let mut target = None;
@@ -277,14 +339,30 @@ impl AdminServer {
                 }
 
                 if let Some(b) = target {
-                    tokio::spawn(async move {
-                        DrainController::drain_backend(b, std::time::Duration::from_secs(30)).await;
-                    });
-                    (
-                        "202 Accepted",
-                        "application/json",
-                        r#"{"status":"draining started"}"#.to_string(),
-                    )
+                    use nexuslb_core::types::BackendState;
+                    let current_b_state = b.state();
+                    if current_b_state == BackendState::Draining {
+                        (
+                            "200 OK",
+                            "application/json",
+                            r#"{"status":"backend already draining"}"#.to_string(),
+                        )
+                    } else if current_b_state == BackendState::Down {
+                        (
+                            "200 OK",
+                            "application/json",
+                            r#"{"status":"backend already down"}"#.to_string(),
+                        )
+                    } else {
+                        tokio::spawn(async move {
+                            DrainController::drain_backend(b, std::time::Duration::from_secs(30)).await;
+                        });
+                        (
+                            "202 Accepted",
+                            "application/json",
+                            r#"{"status":"draining started"}"#.to_string(),
+                        )
+                    }
                 } else {
                     (
                         "404 Not Found",
@@ -305,12 +383,12 @@ impl AdminServer {
                         Ok(msg) => (
                             "200 OK",
                             "application/json",
-                            format!(r#"{{"status":"success","message":"{}"}}"#, msg),
+                            serde_json::json!({"status": "success", "message": msg}).to_string(),
                         ),
                         Err(e) => (
                             "500 Internal Server Error",
                             "application/json",
-                            format!(r#"{{"status":"error","error":"{}"}}"#, e),
+                            serde_json::json!({"status": "error", "error": e}).to_string(),
                         ),
                     }
                 } else {
@@ -329,7 +407,7 @@ impl AdminServer {
         };
 
         let response = format!(
-            "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nCache-Control: no-store\r\n\r\n{}",
             status,
             content_type,
             body.len(),
@@ -350,5 +428,18 @@ mod tests {
         assert!(constant_time_eq(b"my-secret-token", b"my-secret-token"));
         assert!(!constant_time_eq(b"my-secret-token", b"wrong-token-abc"));
         assert!(!constant_time_eq(b"short", b"longer-token"));
+        // Verify empty inputs
+        assert!(constant_time_eq(b"", b""));
+        assert!(!constant_time_eq(b"", b"x"));
+        assert!(!constant_time_eq(b"x", b""));
+
+        // Verify that 256-byte length differences never cause truncation to zero
+        let empty = vec![];
+        let bytes_256 = vec![0u8; 256];
+        assert!(!constant_time_eq(&empty, &bytes_256));
+        assert!(!constant_time_eq(&bytes_256, &empty));
+
+        let bytes_512 = vec![0u8; 512];
+        assert!(!constant_time_eq(&bytes_256, &bytes_512));
     }
 }

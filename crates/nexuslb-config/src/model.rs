@@ -258,12 +258,12 @@ impl Default for MetricsConfig {
 }
 
 fn default_metrics_addr() -> String {
-    "0.0.0.0:9090".to_string()
+    "127.0.0.1:9090".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminConfig {
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub enabled: bool,
     #[serde(default = "default_admin_addr")]
     pub address: String,
@@ -295,7 +295,7 @@ impl Default for AdminAuthConfig {
 impl Default for AdminConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             address: default_admin_addr(),
             token: None,
             mutation_token: None,

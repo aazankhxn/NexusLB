@@ -427,13 +427,14 @@ fn build_dataplane_state(cfg: &NexusConfig) -> anyhow::Result<(DataplaneState, V
     let mut filter_chain = FilterChain::new();
     for route in &cfg.routes {
         if let Some(ref f) = route.filters {
-            if f.jwt_secret.is_some() {
+            if let Some(ref sec) = f.jwt_secret {
                 let prefix = if route.path.ends_with('*') {
                     route.path[..route.path.len() - 1].to_string()
                 } else {
                     route.path.clone()
                 };
-                filter_chain.add_filter(Arc::new(JwtAuthFilter::new(prefix)));
+                let filter = JwtAuthFilter::new(prefix).with_secret(sec.as_bytes());
+                filter_chain.add_filter(Arc::new(filter));
             }
             if !f.add_headers.is_empty() || !f.remove_headers.is_empty() {
                 let mut rewrite = HeaderRewriteFilter::new();
@@ -654,6 +655,7 @@ async fn start_nexuslb(
                 shared_state,
                 metrics,
                 socket_config,
+                cfg.limits.max_connections,
             )?;
 
             info!("NexusLB is running. Press Ctrl+C to terminate.");

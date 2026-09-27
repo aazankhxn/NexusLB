@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod h2;
 pub mod http;
 pub mod rate_limiter;

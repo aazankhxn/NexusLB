@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod dns;
 pub mod file;
 pub mod k8s;

@@ -45,7 +45,12 @@ impl BufferPool {
     }
 
     fn release(&self, mut buffer: Vec<u8>) {
-        if buffer.len() != self.inner.buffer_size {
+        // Prevent pool memory inflation: if the buffer's underlying allocation grew
+        // beyond 2× nominal (e.g., from header parsing doubling), discard the oversized
+        // allocation and replace with a fresh correctly-sized buffer.
+        if buffer.capacity() > self.inner.buffer_size * 2 {
+            buffer = vec![0u8; self.inner.buffer_size];
+        } else if buffer.len() != self.inner.buffer_size {
             buffer.resize(self.inner.buffer_size, 0);
         }
         let _ = self.inner.queue.push(buffer);

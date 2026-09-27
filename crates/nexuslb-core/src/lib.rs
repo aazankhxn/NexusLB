@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod backend;
 pub mod error;
 pub mod stats;

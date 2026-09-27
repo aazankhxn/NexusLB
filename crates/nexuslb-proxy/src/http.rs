@@ -14,6 +14,9 @@ use nexuslb_network::{BufferPool, ConnectionPool};
 use nexuslb_observability::{format_traceparent, AccessLogEntry, AccessLogger, ProxySpan};
 use nexuslb_wasm::{FilterAction, FilterChain};
 
+const CLIENT_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
+const CLIENT_BODY_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub struct HttpProxy;
 
 impl HttpProxy {
@@ -26,7 +29,7 @@ impl HttpProxy {
         conn_pool: ConnectionPool,
         metrics: Arc<WorkerMetrics>,
         buffer_pool: BufferPool,
-        _retry_policy: RetryPolicy,
+        retry_policy: RetryPolicy,
         is_tls: bool,
         cache: Arc<nexuslb_cache::HttpCache>,
         mut read_buf: nexuslb_network::PooledBuffer,
@@ -85,11 +88,23 @@ impl HttpProxy {
             header_count: usize,
         }
 
+        let mut initial_host: Option<String> = None;
+
         let result: std::io::Result<()> = async {
             loop {
-                // 1. Single-pass header reading and inspection
+                // 1. Single-pass header reading and inspection with Slowloris defense timeout
                 if total_read == 0 {
-                    let n = client.read(&mut read_buf[..]).await?;
+                    let n = match tokio::time::timeout(CLIENT_HEADER_TIMEOUT, client.read(&mut read_buf[..])).await {
+                        Ok(res) => res?,
+                        Err(_) => {
+                            let err_resp = b"HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Timeout: client header read timed out\n";
+                            let _ = client.write_all(err_resp).await;
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "Client header read timed out",
+                            ));
+                        }
+                    };
                     if n == 0 {
                         return Ok(()); // Client disconnected cleanly
                     }
@@ -189,6 +204,17 @@ impl HttpProxy {
                                 ));
                             }
 
+                            // RFC 7230 Section 3.3.1: Reject standalone chunked transfer encoding with 501 Not Implemented
+                            // rather than silently dropping chunked request bodies and corrupting downstream framing.
+                            if te_present {
+                                let err_resp = b"HTTP/1.1 501 Not Implemented\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nTransfer-Encoding: chunked is not supported; Content-Length required\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "HTTP request rejected: Transfer-Encoding chunked is not supported",
+                                ));
+                            }
+
                             const MAX_BODY_LIMIT: usize = 16 * 1024 * 1024;
                             if cl > MAX_BODY_LIMIT {
                                 let err_resp = b"HTTP/1.1 413 Payload Too Large\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nPayload Too Large\n";
@@ -227,7 +253,17 @@ impl HttpProxy {
                                 let new_len = (read_buf.len() * 2).min(MAX_HEADER_LIMIT);
                                 read_buf.resize(new_len, 0);
                             }
-                            let n = client.read(&mut read_buf[total_read..]).await?;
+                            let n = match tokio::time::timeout(CLIENT_HEADER_TIMEOUT, client.read(&mut read_buf[total_read..])).await {
+                                Ok(res) => res?,
+                                Err(_) => {
+                                    let err_resp = b"HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Timeout: header read timed out\n";
+                                    let _ = client.write_all(err_resp).await;
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::TimedOut,
+                                        "Client header read timed out",
+                                    ));
+                                }
+                            };
                             if n == 0 {
                                 return Ok(()); // Client disconnected cleanly
                             }
@@ -256,9 +292,19 @@ impl HttpProxy {
 
                 let req_total_len = parsed.header_len + parsed.body_len;
 
-                // 2. Read initial part of body into buffer (as much as fits without blocking)
+                // 2. Read initial part of body into buffer with body timeout
                 while total_read < req_total_len && total_read < read_buf.len() {
-                    let n = client.read(&mut read_buf[total_read..]).await?;
+                    let n = match tokio::time::timeout(CLIENT_BODY_TIMEOUT, client.read(&mut read_buf[total_read..])).await {
+                        Ok(res) => res?,
+                        Err(_) => {
+                            let err_resp = b"HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nRequest Timeout: body read timed out\n";
+                            let _ = client.write_all(err_resp).await;
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "Client body read timed out",
+                            ));
+                        }
+                    };
                     if n == 0 {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::UnexpectedEof,
@@ -275,20 +321,58 @@ impl HttpProxy {
                 let method = std::str::from_utf8(&read_buf[parsed.method_range.0..parsed.method_range.1]).unwrap_or("GET");
                 let path = std::str::from_utf8(&read_buf[parsed.path_range.0..parsed.path_range.1]).unwrap_or("/");
 
-                // 3. HTTP -> HTTPS 301 Redirect if configured
+                // RFC 9112 Section 3.2: Defend against keep-alive Host switching / misdirection
+                let current_host = parsed.host_range
+                    .and_then(|(s, e)| std::str::from_utf8(&read_buf[s..e]).ok())
+                    .map(|h| h.trim().to_ascii_lowercase());
+
+                let mut host_changed = false;
+                match &initial_host {
+                    None => {
+                        initial_host = current_host.clone();
+                    }
+                    Some(first) => {
+                        if let Some(ref curr) = current_host {
+                            if first != curr {
+                                host_changed = true;
+                            }
+                        }
+                    }
+                }
+
+                if host_changed {
+                    let err_resp = b"HTTP/1.1 421 Misdirected Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nMisdirected Request: Host changed on persistent connection (RFC 9112)\n";
+                    let _ = client.write_all(err_resp).await;
+                    conn_pool.dec_active(backend.id());
+                    return Ok(());
+                }
+
+                // 3. HTTP -> HTTPS 301 Redirect if configured (with CRLF, open-redirect & protocol-relative defense)
                 if redirect_http_to_https && !is_tls {
-                    let host_hdr = parsed.host_range
-                        .and_then(|(s, e)| std::str::from_utf8(&read_buf[s..e]).ok())
+                    let clean_host = current_host.as_deref()
+                        .filter(|h| !h.is_empty() && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':' || c == '[' || c == ']'))
                         .unwrap_or("localhost");
+
+                    let mut clean_path = path.chars().filter(|&c| c >= ' ' && c != '\x7f').collect::<String>();
+                    if !clean_path.starts_with('/') {
+                        clean_path = format!("/{}", clean_path);
+                    }
+                    while clean_path.starts_with("//") {
+                        clean_path.remove(0);
+                    }
+
                     let redir = format!(
                         "HTTP/1.1 301 Moved Permanently\r\nLocation: https://{}{}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                        host_hdr, path
+                        clean_host, clean_path
                     );
                     client.write_all(redir.as_bytes()).await?;
                     return Ok(());
                 }
 
                 // 4. Evaluate filter chain (JWT authentication, header rewrites)
+                let mut filter_headers: Option<Vec<(String, String)>> = None;
+                let mut filter_method: Option<String> = None;
+                let mut filter_path: Option<String> = None;
                 if !filter_chain.is_empty() {
                     let mut m_str = method.to_string();
                     let mut p_str = path.to_string();
@@ -318,11 +402,22 @@ impl HttpProxy {
                         FilterAction::Drop => {
                             return Ok(());
                         }
-                        FilterAction::Continue => {}
+                        FilterAction::Continue => {
+                            filter_headers = Some(headers_vec);
+                            filter_method = Some(m_str);
+                            filter_path = Some(p_str);
+                        }
                     }
                 }
 
                 // 5. Fast RFC 7234 HTTP Cache check (lock-free when cache is empty)
+                // RFC 7234 Section 3.2: Shared caches MUST NOT serve cached responses to requests with Authorization headers
+                let has_auth = parsed.header_ranges[..parsed.header_count]
+                    .iter()
+                    .any(|&(s, e, _, _)| {
+                        read_buf[s as usize..e as usize].eq_ignore_ascii_case(b"authorization")
+                    });
+
                 let host_hdr = parsed.host_range
                     .and_then(|(s, e)| std::str::from_utf8(&read_buf[s..e]).ok())
                     .unwrap_or("localhost");
@@ -330,7 +425,13 @@ impl HttpProxy {
                     .and_then(|(s, e)| std::str::from_utf8(&read_buf[s..e]).ok());
 
                 let cache_start = Instant::now();
-                match cache.get(method, host_hdr, path, if_none_match) {
+                let cache_result = if has_auth {
+                    nexuslb_cache::CacheResult::Miss
+                } else {
+                    cache.get(method, host_hdr, path, if_none_match)
+                };
+
+                match cache_result {
                     nexuslb_cache::CacheResult::Hit(cached) => {
                         let resp_len = {
                             let mut cursor = std::io::Cursor::new(&mut resp_buf[..]);
@@ -422,11 +523,53 @@ impl HttpProxy {
                 }
 
                 // 6. Build forwarded request into reusable req_bytes Vec
-                req_bytes.clear();
+                // Prevent per-connection memory bloat: if a large POST inflated req_bytes,
+                // shrink it back for subsequent keep-alive requests on this connection.
+                if req_bytes.capacity() > 65_536 {
+                    req_bytes = Vec::with_capacity(2048);
+                } else {
+                    req_bytes.clear();
+                }
                 let incoming_tp = parsed.tp_range
                     .and_then(|(s, e)| std::str::from_utf8(&read_buf[s..e]).ok());
 
-                if !parsed.has_fwd && parsed.header_len >= 2 {
+                if let Some(ref hdrs) = filter_headers {
+                    let final_method = filter_method.as_deref().unwrap_or(method);
+                    let final_path = filter_path.as_deref().unwrap_or(path);
+                    req_bytes.extend_from_slice(final_method.as_bytes());
+                    req_bytes.push(b' ');
+                    req_bytes.extend_from_slice(final_path.as_bytes());
+                    req_bytes.extend_from_slice(b" HTTP/1.1\r\n");
+
+                    for (k, v) in hdrs {
+                        if !k.eq_ignore_ascii_case("x-forwarded-for")
+                            && !k.eq_ignore_ascii_case("x-forwarded-proto")
+                            && !k.eq_ignore_ascii_case("traceparent")
+                        {
+                            req_bytes.extend_from_slice(k.as_bytes());
+                            req_bytes.extend_from_slice(b": ");
+                            req_bytes.extend_from_slice(v.as_bytes());
+                            req_bytes.extend_from_slice(b"\r\n");
+                        }
+                    }
+
+                    req_bytes.extend_from_slice(x_forwarded_for);
+                    req_bytes.extend_from_slice(x_forwarded_proto);
+                    if let Some(tp) = incoming_tp {
+                        let span = ProxySpan::new(Some(tp));
+                        let tp_bytes = format_traceparent(
+                            span.trace_context.version,
+                            &span.trace_context.trace_id,
+                            &span.trace_context.span_id,
+                            span.trace_context.flags,
+                        );
+                        req_bytes.extend_from_slice(b"traceparent: ");
+                        req_bytes.extend_from_slice(&tp_bytes);
+                        req_bytes.extend_from_slice(b"\r\n\r\n");
+                    } else {
+                        req_bytes.extend_from_slice(b"\r\n");
+                    }
+                } else if !parsed.has_fwd && parsed.header_len >= 2 {
                     // Ultra-fast zero-alloc slice forward: reuse original parsed headers directly!
                     req_bytes.extend_from_slice(&read_buf[..parsed.header_len - 2]);
                     req_bytes.extend_from_slice(x_forwarded_for);
@@ -506,17 +649,66 @@ impl HttpProxy {
                     )
                     .await;
                 } else {
-                    let (status_code, is_server_close, total_sent, req_dur, upstream) = Self::forward_http_request(
-                        &mut client,
-                        cached_upstream.take(),
-                        &req_bytes,
-                        remaining_body_to_stream,
-                        &backend,
-                        &conn_pool,
-                        &metrics,
-                        &mut resp_buf,
-                    )
-                    .await?;
+                    const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(30);
+                    let is_retryable_req = remaining_body_to_stream == 0 && RetryPolicy::is_retryable_method(method);
+                    let max_attempts = if is_retryable_req {
+                        retry_policy.max_retries + 1
+                    } else {
+                        1
+                    };
+                    let mut attempts = 0;
+
+                    let (status_code, is_server_close, total_sent, req_dur, upstream) = loop {
+                        let timeout_fut = tokio::time::timeout(
+                            UPSTREAM_TIMEOUT,
+                            Self::forward_http_request(
+                                &mut client,
+                                cached_upstream.take(),
+                                &req_bytes,
+                                remaining_body_to_stream,
+                                &backend,
+                                &conn_pool,
+                                &metrics,
+                                &mut resp_buf,
+                            ),
+                        );
+
+                        match timeout_fut.await {
+                            Ok(Ok(res)) => {
+                                if attempts + 1 < max_attempts && retry_policy.is_retryable_status(res.0) {
+                                    attempts += 1;
+                                    retry_policy.backoff(attempts).await;
+                                    continue;
+                                }
+                                break res;
+                            }
+                            Ok(Err(e)) => {
+                                if attempts + 1 < max_attempts {
+                                    attempts += 1;
+                                    retry_policy.backoff(attempts).await;
+                                    continue;
+                                }
+                                let err_resp = b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway: upstream connection failed\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(e);
+                            }
+                            Err(_elapsed) => {
+                                backend.stats().record_error();
+                                metrics.inc_backend_errors();
+                                if attempts + 1 < max_attempts {
+                                    attempts += 1;
+                                    retry_policy.backoff(attempts).await;
+                                    continue;
+                                }
+                                let err_resp = b"HTTP/1.1 504 Gateway Timeout\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nGateway Timeout: upstream server failed to respond in time\n";
+                                let _ = client.write_all(err_resp).await;
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::TimedOut,
+                                    "Upstream request timed out after 30s",
+                                ));
+                            }
+                        }
+                    };
 
                     access_logger.log(AccessLogEntry::new(
                         client_addr.ip(),
@@ -537,6 +729,9 @@ impl HttpProxy {
                     total_read = leftover;
 
                     if is_server_close || parsed.client_close {
+                        // Upstream sent Connection: close or client requested close —
+                        // drop the socket, but decrement active count to prevent drift
+                        conn_pool.dec_active(backend.id());
                         return Ok(());
                     } else {
                         cached_upstream = Some(upstream);
@@ -625,7 +820,22 @@ impl HttpProxy {
             let mut left = remaining_body;
             while left > 0 {
                 let chunk_size = left.min(resp_buf.len());
-                let n = client.read(&mut resp_buf[..chunk_size]).await?;
+                let n = match tokio::time::timeout(
+                    CLIENT_BODY_TIMEOUT,
+                    client.read(&mut resp_buf[..chunk_size]),
+                )
+                .await
+                {
+                    Ok(res) => res?,
+                    Err(_) => {
+                        backend.stats().record_error();
+                        metrics.inc_backend_errors();
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Client body stream read timed out",
+                        ));
+                    }
+                };
                 if n == 0 {
                     backend.stats().record_error();
                     metrics.inc_backend_errors();
@@ -645,6 +855,7 @@ impl HttpProxy {
         let mut header_len = 0;
         let mut content_length = None;
         let mut is_close = false;
+        let mut is_chunked = false;
         let mut status_code = 200u16;
 
         loop {
@@ -653,6 +864,7 @@ impl HttpProxy {
                 // If upstream sent EOF on first read of a cached connection, reconnect once
                 if total_read == 0 {
                     trace!("Upstream sent EOF on first read, reconnecting");
+                    const RECONNECT_TIMEOUT: Duration = Duration::from_secs(10);
                     upstream = conn_pool
                         .get_or_connect(backend.id(), backend.socket_addr())
                         .await
@@ -661,14 +873,31 @@ impl HttpProxy {
                             metrics.inc_backend_errors();
                             std::io::Error::new(std::io::ErrorKind::NotConnected, e.to_string())
                         })?;
-                    upstream
-                        .write_all(initial_payload)
-                        .await
-                        .inspect_err(|_e| {
+                    match tokio::time::timeout(RECONNECT_TIMEOUT, upstream.write_all(initial_payload)).await {
+                        Ok(res) => res.inspect_err(|_e| {
                             backend.stats().record_error();
                             metrics.inc_backend_errors();
-                        })?;
-                    let n2 = upstream.read(&mut resp_buf[..]).await?;
+                        })?,
+                        Err(_) => {
+                            backend.stats().record_error();
+                            metrics.inc_backend_errors();
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "Upstream reconnect write timed out",
+                            ));
+                        }
+                    }
+                    let n2 = match tokio::time::timeout(RECONNECT_TIMEOUT, upstream.read(&mut resp_buf[..])).await {
+                        Ok(res) => res?,
+                        Err(_) => {
+                            backend.stats().record_error();
+                            metrics.inc_backend_errors();
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "Upstream reconnect read timed out",
+                            ));
+                        }
+                    };
                     if n2 == 0 {
                         backend.stats().record_error();
                         metrics.inc_backend_errors();
@@ -685,7 +914,7 @@ impl HttpProxy {
                 total_read += n;
             }
 
-            let mut headers = [httparse::EMPTY_HEADER; 16];
+            let mut headers = [httparse::EMPTY_HEADER; 96];
             let mut resp = httparse::Response::new(&mut headers);
 
             if let Ok(httparse::Status::Complete(hlen)) = resp.parse(&resp_buf[..total_read]) {
@@ -696,8 +925,11 @@ impl HttpProxy {
                         if let Ok(s) = std::str::from_utf8(h.value) {
                             content_length = s.trim().parse::<usize>().ok();
                         }
-                    }
-                    if h.name.eq_ignore_ascii_case("connection")
+                    } else if h.name.eq_ignore_ascii_case("transfer-encoding")
+                        && h.value.eq_ignore_ascii_case(b"chunked")
+                    {
+                        is_chunked = true;
+                    } else if h.name.eq_ignore_ascii_case("connection")
                         && h.value.eq_ignore_ascii_case(b"close")
                     {
                         is_close = true;
@@ -747,7 +979,31 @@ impl HttpProxy {
             total_bytes += n as u64;
         }
 
-        if is_close && content_length.is_none() {
+        if is_chunked {
+            // Forward chunked streaming response until terminal "0\r\n\r\n" chunk
+            // Mark is_close = true so this upstream socket is not reused across requests (prevent desync)
+            is_close = true;
+            let body_slice = &resp_buf[header_len..total_read];
+            let already_terminated = body_slice.windows(5).any(|w| w == b"0\r\n\r\n")
+                || body_slice.ends_with(b"0\r\n\r\n");
+
+            if !already_terminated {
+                loop {
+                    let n = upstream.read(resp_buf).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    client.write_all(&resp_buf[..n]).await?;
+                    total_bytes += n as u64;
+
+                    let chunk = &resp_buf[..n];
+                    if chunk.windows(5).any(|w| w == b"0\r\n\r\n") || chunk.ends_with(b"0\r\n\r\n")
+                    {
+                        break;
+                    }
+                }
+            }
+        } else if is_close && content_length.is_none() {
             // No Content-Length specified: read until EOF
             loop {
                 let n = upstream.read(resp_buf).await?;
@@ -788,7 +1044,14 @@ mod tests {
         ))
     }
 
-    fn test_fixtures() -> (ConnectionPool, Arc<WorkerMetrics>, BufferPool, Arc<nexuslb_cache::HttpCache>, Arc<AccessLogger>, Arc<FilterChain>) {
+    fn test_fixtures() -> (
+        ConnectionPool,
+        Arc<WorkerMetrics>,
+        BufferPool,
+        Arc<nexuslb_cache::HttpCache>,
+        Arc<AccessLogger>,
+        Arc<FilterChain>,
+    ) {
         let conn_pool = ConnectionPool::new(nexuslb_network::ConnectionPoolConfig::default());
         let metrics = Arc::new(WorkerMetrics::new(0));
         let buffer_pool = BufferPool::new(16, 16384);
@@ -796,7 +1059,14 @@ mod tests {
         let (logger, _) = AccessLogger::new(false, "combined", "stdout");
         let access_logger = Arc::new(logger);
         let filter_chain = Arc::new(FilterChain::new());
-        (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain)
+        (
+            conn_pool,
+            metrics,
+            buffer_pool,
+            cache,
+            access_logger,
+            filter_chain,
+        )
     }
 
     #[tokio::test]
@@ -836,7 +1106,49 @@ mod tests {
         )
         .await;
 
-        assert!(res.is_err(), "Must reject request with smuggling attack vector");
+        assert!(
+            res.is_err(),
+            "Must reject request with smuggling attack vector"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_chunked_transfer_encoding_rejected_501() {
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let backend = test_backend();
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let read_buf = buffer_pool.acquire();
+
+        tokio::spawn(async move {
+            let req = b"POST /upload HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n0\r\n\r\n";
+            client_side.write_all(req).await.unwrap();
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("501 Not Implemented"));
+            assert!(resp_str.contains("Transfer-Encoding: chunked is not supported"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_err());
     }
 
     #[tokio::test]
@@ -887,7 +1199,8 @@ mod tests {
 
         tokio::spawn(async move {
             // Content-Length is 20MB (exceeds default 16MB limit)
-            let req = b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 20971520\r\n\r\n";
+            let req =
+                b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 20971520\r\n\r\n";
             client_side.write_all(req).await.unwrap();
 
             let mut resp = vec![0u8; 1024];
@@ -957,7 +1270,10 @@ mod tests {
 
         tokio::spawn(async move {
             let body_size = 65536usize;
-            let header = format!("POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n", body_size);
+            let header = format!(
+                "POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+                body_size
+            );
             client_side.write_all(header.as_bytes()).await.unwrap();
 
             // Write 64KB body in chunks
@@ -990,8 +1306,123 @@ mod tests {
         )
         .await;
 
-        assert!(res.is_ok(), "64KB body streamed successfully through 16KB buffer");
+        assert!(
+            res.is_ok(),
+            "64KB body streamed successfully through 16KB buffer"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_https_301_redirect_sanitization() {
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let backend = test_backend();
+
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let read_buf = buffer_pool.acquire();
+
+        tokio::spawn(async move {
+            // Test protocol-relative path traversal defense
+            let req = b"GET ///evil.com/login HTTP/1.1\r\nHost: myapp.com\r\n\r\n";
+            client_side.write_all(req).await.unwrap();
+
+            let mut resp = vec![0u8; 1024];
+            let n = client_side.read(&mut resp).await.unwrap();
+            let resp_str = String::from_utf8_lossy(&resp[..n]);
+            assert!(resp_str.contains("301 Moved Permanently"));
+            assert!(resp_str.contains("Location: https://myapp.com/evil.com/login"));
+            assert!(!resp_str.contains("Location: https:////evil.com"));
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false, // is_tls = false triggers redirect
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            true, // redirect_http_to_https = true
+        )
+        .await;
+
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_keepalive_host_switching_rejected_421() {
+        let backend_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend_listener.local_addr().unwrap();
+        let backend = Arc::new(Backend::new(
+            BackendId::new(2),
+            "test_b",
+            BackendAddress::new(backend_addr),
+            100,
+            Protocol::Http1,
+            None,
+        ));
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = backend_listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+                let _ = socket.write_all(resp).await;
+            }
+        });
+
+        let (conn_pool, metrics, buffer_pool, cache, access_logger, filter_chain) = test_fixtures();
+        let (mut client_side, server_side) = tokio::io::duplex(4096);
+        let read_buf = buffer_pool.acquire();
+
+        tokio::spawn(async move {
+            // First request on host-a
+            client_side
+                .write_all(b"GET /first HTTP/1.1\r\nHost: host-a.com\r\n\r\n")
+                .await
+                .unwrap();
+            let mut resp1 = vec![0u8; 512];
+            let n1 = client_side.read(&mut resp1).await.unwrap();
+            assert!(String::from_utf8_lossy(&resp1[..n1]).contains("200 OK"));
+
+            // Second request on same keep-alive TCP stream with DIFFERENT Host header
+            client_side
+                .write_all(b"GET /second HTTP/1.1\r\nHost: host-b.com\r\n\r\n")
+                .await
+                .unwrap();
+            let mut resp2 = vec![0u8; 512];
+            let n2 = client_side.read(&mut resp2).await.unwrap();
+            let resp_str2 = String::from_utf8_lossy(&resp2[..n2]);
+            assert!(
+                resp_str2.contains("421 Misdirected Request"),
+                "Expected 421 Misdirected Request on host switch, got: {}",
+                resp_str2
+            );
+        });
+
+        let res = HttpProxy::handle_connection(
+            server_side,
+            "127.0.0.1:12345".parse().unwrap(),
+            backend,
+            conn_pool,
+            metrics,
+            buffer_pool,
+            RetryPolicy::default(),
+            false,
+            cache,
+            read_buf,
+            0,
+            access_logger,
+            filter_chain,
+            false,
+        )
+        .await;
+
+        assert!(res.is_ok());
     }
 }
-
-

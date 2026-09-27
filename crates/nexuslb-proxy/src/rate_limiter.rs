@@ -46,8 +46,9 @@ impl TokenBucket {
         // Refill tokens based on elapsed time
         let elapsed_nanos = now_nanos.saturating_sub(last);
         if elapsed_nanos >= 1_000_000 {
-            // At least 1ms elapsed
-            let added_tokens = (elapsed_nanos * self.refill_rate_per_sec) / 1_000_000_000;
+            // At least 1ms elapsed; use u128 arithmetic to prevent u64 overflow on high uptime / RPS
+            let added_tokens =
+                ((elapsed_nanos as u128 * self.refill_rate_per_sec as u128) / 1_000_000_000) as u64;
             if added_tokens > 0
                 && self
                     .last_refill
@@ -175,11 +176,15 @@ impl SlidingWindowCounter {
 }
 
 /// Multi-key sliding-window rate limiter (e.g., per-client IP or API token).
+/// Bounded to MAX_SW_KEYS to prevent memory exhaustion under key-rotation attacks.
 pub struct SlidingWindowRateLimiter {
     window_duration: Duration,
     max_per_window: u64,
-    counters: RwLock<AHashMap<String, Arc<SlidingWindowCounter>>>,
+    counters: RwLock<AHashMap<String, (Arc<SlidingWindowCounter>, Instant)>>,
 }
+
+/// Maximum number of distinct keys tracked before evicting stale ones
+const MAX_SW_KEYS: usize = 65_536;
 
 impl SlidingWindowRateLimiter {
     pub fn new(window_duration: Duration, max_per_window: u64) -> Self {
@@ -193,25 +198,59 @@ impl SlidingWindowRateLimiter {
     pub fn check_key(&self, key: &str, count: u64) -> bool {
         let counter = {
             let map = self.counters.read();
-            map.get(key).cloned()
+            map.get(key).map(|(c, _)| c.clone())
         };
 
         let counter = match counter {
             Some(c) => c,
             None => {
                 let mut map = self.counters.write();
-                map.entry(key.to_string())
-                    .or_insert_with(|| {
-                        Arc::new(SlidingWindowCounter::new(
-                            self.window_duration,
-                            self.max_per_window,
-                        ))
-                    })
-                    .clone()
+                if let Some((existing, last_seen)) = map.get_mut(key) {
+                    *last_seen = Instant::now();
+                    existing.clone()
+                } else {
+                    // Enforce capacity bound to prevent memory exhaustion under key-rotation DDoS
+                    if map.len() >= MAX_SW_KEYS {
+                        let now = Instant::now();
+                        let idle_cutoff = self.window_duration * 2;
+                        map.retain(|_, (c, last_seen)| {
+                            c.estimated_usage() > 0 && now.duration_since(*last_seen) < idle_cutoff
+                        });
+                        if map.len() >= MAX_SW_KEYS {
+                            if let Some(oldest_key) = map
+                                .iter()
+                                .min_by_key(|(_, (_, last_seen))| *last_seen)
+                                .map(|(k, _)| k.clone())
+                            {
+                                map.remove(&oldest_key);
+                            }
+                        }
+                    }
+
+                    let c = Arc::new(SlidingWindowCounter::new(
+                        self.window_duration,
+                        self.max_per_window,
+                    ));
+                    map.insert(key.to_string(), (c.clone(), Instant::now()));
+                    c
+                }
             }
         };
 
         counter.try_acquire(count)
+    }
+
+    pub fn cleanup(&self) {
+        let mut map = self.counters.write();
+        let now = Instant::now();
+        let idle_cutoff = self.window_duration * 2;
+        map.retain(|_, (c, last_seen)| {
+            c.estimated_usage() > 0 && now.duration_since(*last_seen) < idle_cutoff
+        });
+    }
+
+    pub fn key_count(&self) -> usize {
+        self.counters.read().len()
     }
 
     pub fn check_ip(&self, ip: IpAddr) -> bool {
@@ -344,9 +383,12 @@ impl ClusterRateLimiter {
 // 4. BASELINE RATE LIMITER (Existing compatibility)
 // ============================================================================
 
+const MAX_IP_BUCKETS: usize = 65_536;
+const IP_BUCKET_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
 pub struct RateLimiter {
     global_bucket: Option<TokenBucket>,
-    ip_buckets: RwLock<AHashMap<IpAddr, Arc<TokenBucket>>>,
+    ip_buckets: RwLock<AHashMap<IpAddr, (Arc<TokenBucket>, Instant)>>,
     client_rps: Option<u64>,
 }
 
@@ -373,16 +415,39 @@ impl RateLimiter {
         if let (Some(rps), Some(ip)) = (self.client_rps, client_ip) {
             let bucket = {
                 let map = self.ip_buckets.read();
-                map.get(&ip).cloned()
+                map.get(&ip).map(|(b, _)| b.clone())
             };
 
             let bucket = match bucket {
                 Some(b) => b,
                 None => {
                     let mut map = self.ip_buckets.write();
-                    map.entry(ip)
-                        .or_insert_with(|| Arc::new(TokenBucket::new(rps, rps * 2)))
-                        .clone()
+                    // Double check if inserted while acquiring write lock
+                    if let Some((existing, last_seen)) = map.get_mut(&ip) {
+                        *last_seen = Instant::now();
+                        existing.clone()
+                    } else {
+                        // Enforce capacity bounds to prevent memory exhaustion under IP rotation DDoS
+                        if map.len() >= MAX_IP_BUCKETS {
+                            let now = Instant::now();
+                            map.retain(|_, (_, last_seen)| {
+                                now.duration_since(*last_seen) < IP_BUCKET_IDLE_TIMEOUT
+                            });
+                            if map.len() >= MAX_IP_BUCKETS {
+                                if let Some(oldest_ip) = map
+                                    .iter()
+                                    .min_by_key(|(_, (_, last_seen))| *last_seen)
+                                    .map(|(k, _)| *k)
+                                {
+                                    map.remove(&oldest_ip);
+                                }
+                            }
+                        }
+
+                        let b = Arc::new(TokenBucket::new(rps, rps * 2));
+                        map.insert(ip, (b.clone(), Instant::now()));
+                        b
+                    }
                 }
             };
 
@@ -452,5 +517,18 @@ mod tests {
         let res_c = coordinator.sync_usage("global_quota", 3).await.unwrap();
         assert!(!res_c.allowed);
         assert_eq!(res_c.current_usage, 8);
+    }
+
+    #[test]
+    fn test_sliding_window_rate_limiter_stale_cleanup() {
+        let limiter = SlidingWindowRateLimiter::new(Duration::from_millis(50), 10);
+        assert!(limiter.check_key("user_1", 1));
+        assert!(limiter.check_key("user_2", 1));
+        assert_eq!(limiter.key_count(), 2);
+
+        // Sleep to let windows elapse
+        std::thread::sleep(Duration::from_millis(110));
+        limiter.cleanup();
+        assert_eq!(limiter.key_count(), 0);
     }
 }

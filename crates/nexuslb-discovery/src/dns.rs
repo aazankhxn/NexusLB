@@ -35,7 +35,12 @@ impl ServiceDiscoveryProvider for DnsDiscovery {
         let host_port = format!("{}:{}", self.domain, self.port);
         trace!(domain = %self.domain, port = self.port, "Resolving DNS endpoints");
 
-        let addrs = lookup_host(&host_port).await?;
+        let addrs = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            lookup_host(&host_port),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("DNS lookup timed out for {}", self.domain))??;
         let mut instances = Vec::new();
 
         for (idx, addr) in addrs.enumerate() {

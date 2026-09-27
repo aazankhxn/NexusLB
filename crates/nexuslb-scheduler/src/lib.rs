@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod adaptive;
 pub mod consistent_hash;
 pub mod ewma_latency;

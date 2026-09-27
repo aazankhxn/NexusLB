@@ -61,13 +61,21 @@ impl CircuitBreaker {
         }
     }
 
+    fn current_epoch_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
     pub fn on_failure(&self, backend: &Backend) {
         match backend.circuit_state() {
             CircuitState::Closed => {
                 let consecutive = backend.stats().consecutive_errors();
                 if consecutive >= self.config.failure_threshold {
+                    let now_ms = Self::current_epoch_ms();
                     backend.set_circuit_state(CircuitState::Open);
-                    let now_ms = Instant::now().elapsed().as_millis() as u64;
+                    backend.set_circuit_tripped_at_millis(now_ms);
                     self.state_changed_at.store(now_ms, Ordering::Release);
                     warn!(
                         backend_id = %backend.id(),
@@ -79,8 +87,9 @@ impl CircuitBreaker {
             }
             CircuitState::HalfOpen => {
                 // Any error during half-open trips it immediately back to OPEN
+                let now_ms = Self::current_epoch_ms();
                 backend.set_circuit_state(CircuitState::Open);
-                let now_ms = Instant::now().elapsed().as_millis() as u64;
+                backend.set_circuit_tripped_at_millis(now_ms);
                 self.state_changed_at.store(now_ms, Ordering::Release);
                 warn!(
                     backend_id = %backend.id(),
@@ -92,10 +101,15 @@ impl CircuitBreaker {
         }
     }
 
-    pub fn maybe_half_open(&self, backend: &Backend, now: Instant, created_at: Instant) {
+    pub fn maybe_half_open(&self, backend: &Backend, _now: Instant, _created_at: Instant) {
         if backend.circuit_state() == CircuitState::Open {
-            let changed_at_ms = self.state_changed_at.load(Ordering::Acquire);
-            let current_ms = now.duration_since(created_at).as_millis() as u64;
+            let changed_at_ms = backend.circuit_tripped_at_millis();
+            let changed_at_ms = if changed_at_ms == 0 {
+                self.state_changed_at.load(Ordering::Acquire)
+            } else {
+                changed_at_ms
+            };
+            let current_ms = Self::current_epoch_ms();
             if current_ms.saturating_sub(changed_at_ms)
                 >= self.config.cool_down_duration.as_millis() as u64
             {

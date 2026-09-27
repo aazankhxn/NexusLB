@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use ahash::AHashMap;
 use bytes::Bytes;
 use parking_lot::RwLock;
@@ -119,16 +121,32 @@ impl CacheStorage {
     }
 
     fn put(&mut self, key: CacheKey, response: CachedResponse) -> bool {
-        if self.map.len() >= self.capacity && !self.map.contains_key(&key) {
-            // Evict oldest (LRU)
-            if let Some(oldest_key) = self.order.pop_front() {
-                self.map.remove(&oldest_key);
+        let is_new = !self.map.contains_key(&key);
+        if is_new {
+            if self.map.len() >= self.capacity {
+                while let Some(oldest_key) = self.order.pop_front() {
+                    if self.map.remove(&oldest_key).is_some() {
+                        break;
+                    }
+                }
             }
+            self.order.push_back(key.clone());
         }
 
-        self.order.push_back(key.clone());
         self.map.insert(key, CacheEntry { response });
-        true
+        is_new
+    }
+
+    fn sweep_expired(&mut self) -> usize {
+        let now = Instant::now();
+        let initial = self.map.len();
+        self.map.retain(|_, v| now.duration_since(v.response.created_at) < v.response.ttl);
+        let purged = initial - self.map.len();
+        if purged > 0 {
+            let (map, order) = (&self.map, &mut self.order);
+            order.retain(|k| map.contains_key(k));
+        }
+        purged
     }
 }
 
@@ -144,13 +162,47 @@ pub struct HttpCache {
 
 impl HttpCache {
     pub fn new(capacity: usize) -> Self {
-        Self {
+        let cache = Self {
             storage: Arc::new(RwLock::new(CacheStorage::new(capacity))),
             len: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             hits: Arc::new(AtomicU64::new(0)),
             misses: Arc::new(AtomicU64::new(0)),
             revalidations: Arc::new(AtomicU64::new(0)),
+        };
+
+        // Periodic TTL maintenance sweep to evict expired items without waiting for LRU pressure.
+        // Uses Weak references to prevent Arc reference cycles and ensure clean task termination.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let weak_storage = Arc::downgrade(&cache.storage);
+            let weak_len = Arc::downgrade(&cache.len);
+            handle.spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(30));
+                loop {
+                    ticker.tick().await;
+                    let (storage_arc, len_arc) = match (weak_storage.upgrade(), weak_len.upgrade()) {
+                        (Some(s), Some(l)) => (s, l),
+                        _ => break, // HttpCache was dropped, terminate sweep task cleanly
+                    };
+
+                    let mut storage = storage_arc.write();
+                    if storage.sweep_expired() > 0 {
+                        len_arc.store(storage.map.len(), Ordering::Relaxed);
+                    }
+                }
+            });
         }
+
+        cache
+    }
+
+    /// Explicitly sweep expired entries and update cache metrics. Returns number of purged items.
+    pub fn sweep_expired(&self) -> usize {
+        let mut storage = self.storage.write();
+        let purged = storage.sweep_expired();
+        if purged > 0 {
+            self.len.store(storage.map.len(), Ordering::Relaxed);
+        }
+        purged
     }
 
     /// Fast path lookup in memory
@@ -206,6 +258,21 @@ impl HttpCache {
         headers: &[(String, String)],
         body: Bytes,
     ) -> bool {
+        self.put_with_auth(method, host, path, status, headers, body, false)
+    }
+
+    /// Stores a response taking into account request-level authorization under RFC 7234 Section 3.2
+    #[allow(clippy::too_many_arguments)]
+    pub fn put_with_auth(
+        &self,
+        method: &str,
+        host: &str,
+        path: &str,
+        status: u16,
+        headers: &[(String, String)],
+        body: Bytes,
+        request_has_authorization: bool,
+    ) -> bool {
         // Only cache successful or designated cacheable responses
         if status != 200 && status != 203 && status != 300 && status != 301 {
             return false;
@@ -220,6 +287,14 @@ impl HttpCache {
         let mut etag = None;
         let mut last_modified = None;
 
+        // RFC 7234: Shared caches MUST NOT store responses containing Set-Cookie (credential leak)
+        if headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("set-cookie"))
+        {
+            return false;
+        }
+
         for (k, v) in headers {
             if k.eq_ignore_ascii_case("cache-control") {
                 directives = Some(CacheDirectives::parse(v));
@@ -227,6 +302,15 @@ impl HttpCache {
                 etag = Some(v.clone());
             } else if k.eq_ignore_ascii_case("last-modified") {
                 last_modified = Some(v.clone());
+            }
+        }
+
+        // RFC 7234 Section 3.2: Responses to requests with Authorization MUST NOT be cached
+        // unless explicitly marked public or s-maxage
+        if request_has_authorization {
+            match directives {
+                Some(ref d) if d.is_public => {}
+                _ => return false,
             }
         }
 
@@ -338,5 +422,54 @@ mod tests {
             cache.get("GET", "api.local", "/secret", None),
             CacheResult::Miss
         ));
+    }
+
+    #[test]
+    fn test_set_cookie_rejection() {
+        let cache = HttpCache::new(100);
+        let headers = vec![
+            (
+                "Cache-Control".to_string(),
+                "public, max-age=3600".to_string(),
+            ),
+            (
+                "Set-Cookie".to_string(),
+                "session_id=secret123; HttpOnly".to_string(),
+            ),
+        ];
+        let body = Bytes::from_static(b"user profile");
+
+        let stored = cache.put("GET", "api.local", "/profile", 200, &headers, body);
+        assert!(
+            !stored,
+            "Shared cache MUST NOT store responses containing Set-Cookie"
+        );
+
+        assert!(matches!(
+            cache.get("GET", "api.local", "/profile", None),
+            CacheResult::Miss
+        ));
+    }
+
+    #[test]
+    fn test_authorization_header_cache_rejection() {
+        let cache = HttpCache::new(100);
+        let headers = vec![
+            ("Cache-Control".to_string(), "max-age=3600".to_string()),
+            ("ETag".to_string(), "\"v1\"".to_string()),
+        ];
+        let body = Bytes::from_static(b"alice private profile");
+
+        // 1. Authenticated request without 'public' directive MUST NOT be stored
+        let stored = cache.put_with_auth("GET", "api.local", "/private", 200, &headers, body.clone(), true);
+        assert!(!stored, "RFC 7234 §3.2: Authenticated response without public/s-maxage MUST NOT be cached");
+
+        // 2. Authenticated request WITH 'public' directive MAY be stored
+        let public_headers = vec![
+            ("Cache-Control".to_string(), "public, max-age=3600".to_string()),
+            ("ETag".to_string(), "\"v1\"".to_string()),
+        ];
+        let stored_public = cache.put_with_auth("GET", "api.local", "/public-auth", 200, &public_headers, body, true);
+        assert!(stored_public, "RFC 7234 §3.2: Authenticated response with public directive is cacheable");
     }
 }

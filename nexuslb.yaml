@@ -42,15 +42,15 @@ tls:
 
 metrics:
   enabled: true
-  address: "0.0.0.0:9090"
+  address: "127.0.0.1:9090"
 
 admin:
-  enabled: true
+  enabled: false
   address: "127.0.0.1:9091"
   authentication:
     required: true
     allow_unauthenticated_health: true
-  token: "nexuslb-admin-secret-change-in-production"
+  token: null
   mutation_token: null
 
 limits:

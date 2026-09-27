@@ -137,6 +137,16 @@ impl Backend {
     }
 
     #[inline(always)]
+    pub fn circuit_tripped_at_millis(&self) -> u64 {
+        self._circuit_tripped_at_millis.load(Ordering::Acquire)
+    }
+
+    #[inline(always)]
+    pub fn set_circuit_tripped_at_millis(&self, millis: u64) {
+        self._circuit_tripped_at_millis.store(millis, Ordering::Release);
+    }
+
+    #[inline(always)]
     pub fn is_available(&self) -> bool {
         let s = self.state();
         let c = self.circuit_state();

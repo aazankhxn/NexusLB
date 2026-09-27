@@ -28,7 +28,7 @@ members = [
 exclude = []
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 authors = ["NexusLB Contributors"]
 license = "Apache-2.0"
@@ -76,6 +76,8 @@ tokio-rustls = "0.26"
 rustls-pki-types = "1.8"
 rustls-pemfile = "2.1"
 rcgen = "0.13"
+ring = "0.17"
+base64 = "0.22"
 
 # Concurrency & Lock-Free Data Structures
 arc-swap = "1.7"

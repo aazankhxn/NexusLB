@@ -120,43 +120,75 @@ impl ActiveHealthChecker {
                 path,
                 expected_status,
             } => {
-                match tokio::time::timeout(self.config.timeout, TcpStream::connect(addr)).await {
-                    Ok(Ok(mut stream)) => {
-                        let request = format!(
-                            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: NexusLB-HealthCheck/1.0\r\n\r\n",
-                            path, addr
-                        );
-                        if let Err(e) = stream.write_all(request.as_bytes()).await {
-                            return Err(format!("Write error: {}", e));
+                let probe_fut = async {
+                    let mut stream = TcpStream::connect(addr)
+                        .await
+                        .map_err(|e| format!("TCP connect error: {}", e))?;
+
+                    let clean_path = path.replace(['\r', '\n'], "");
+                    let clean_path = if clean_path.starts_with('/') {
+                        clean_path
+                    } else {
+                        format!("/{}", clean_path)
+                    };
+
+                    let request = format!(
+                        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nUser-Agent: NexusLB-HealthCheck/1.0\r\n\r\n",
+                        clean_path, addr
+                    );
+                    stream
+                        .write_all(request.as_bytes())
+                        .await
+                        .map_err(|e| format!("Write error: {}", e))?;
+
+                    let mut buf = [0u8; 1024];
+                    let mut total = 0;
+                    while total < buf.len() {
+                        let n = stream
+                            .read(&mut buf[total..])
+                            .await
+                            .map_err(|e| format!("Read error: {}", e))?;
+                        if n == 0 {
+                            break;
                         }
-
-                        let mut buf = [0u8; 512];
-                        let n = match stream.read(&mut buf).await {
-                            Ok(n) if n > 0 => n,
-                            Ok(_) => return Err("Unexpected EOF from backend".to_string()),
-                            Err(e) => return Err(format!("Read error: {}", e)),
-                        };
-
-                        let response_str = String::from_utf8_lossy(&buf[..n]);
-                        // Parse status line: HTTP/1.1 200 OK
-                        let status_code = response_str
-                            .lines()
-                            .next()
-                            .and_then(|line| {
-                                let mut parts = line.split_whitespace();
-                                parts.next()?; // HTTP/1.1
-                                parts.next()?.parse::<u16>().ok()
-                            })
-                            .unwrap_or(0);
-
-                        if status_code == *expected_status || (200..400).contains(&status_code) {
-                            Ok(())
-                        } else {
-                            Err(format!("Unexpected HTTP status code: {}", status_code))
+                        total += n;
+                        if buf[..total].windows(2).any(|w| w == b"\r\n" || w == b"\n") {
+                            break;
                         }
                     }
-                    Ok(Err(e)) => Err(format!("TCP connect error: {}", e)),
-                    Err(_) => Err("Probe timeout".to_string()),
+
+                    if total == 0 {
+                        return Err("Unexpected EOF from backend".to_string());
+                    }
+
+                    let response_str = String::from_utf8_lossy(&buf[..total]);
+                    // Parse status line: HTTP/1.1 200 OK
+                    let status_code = response_str
+                        .lines()
+                        .next()
+                        .and_then(|line| {
+                            let mut parts = line.split_whitespace();
+                            parts.next()?; // HTTP/1.1
+                            parts.next()?.parse::<u16>().ok()
+                        })
+                        .unwrap_or(0);
+
+                    let is_healthy = if *expected_status > 0 {
+                        status_code == *expected_status
+                    } else {
+                        (200..400).contains(&status_code)
+                    };
+
+                    if is_healthy {
+                        Ok(())
+                    } else {
+                        Err(format!("Unexpected HTTP status code: {}", status_code))
+                    }
+                };
+
+                match tokio::time::timeout(self.config.timeout, probe_fut).await {
+                    Ok(res) => res,
+                    Err(_) => Err("HTTP health probe timeout".to_string()),
                 }
             }
         }

@@ -59,10 +59,32 @@ pub struct ConnectionPool {
 
 impl ConnectionPool {
     pub fn new(config: ConnectionPoolConfig) -> Self {
-        Self {
+        let sweep_interval = (config.idle_timeout / 2).max(Duration::from_secs(5));
+        let pool = Self {
             pools: Arc::new(RwLock::new(AHashMap::new())),
             config,
+        };
+
+        // If running inside Tokio runtime, spawn periodic idle eviction.
+        // Use a Weak reference so the background task terminates cleanly when
+        // the ConnectionPool is dropped, preventing an Arc reference cycle and task leak.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let weak_pools = Arc::downgrade(&pool.pools);
+            let config = pool.config.clone();
+            handle.spawn(async move {
+                let mut ticker = tokio::time::interval(sweep_interval);
+                loop {
+                    ticker.tick().await;
+                    if let Some(pools) = weak_pools.upgrade() {
+                        Self::evict_idle_internal(&pools, &config);
+                    } else {
+                        break;
+                    }
+                }
+            });
         }
+
+        pool
     }
 
     #[inline(always)]
@@ -172,5 +194,92 @@ impl ConnectionPool {
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => true, // Still alive and clean
             Err(_) => false,
         }
+    }
+
+    /// Periodic maintenance sweep: drain expired and closed connections across all backend pools,
+    /// and prune empty/unused backend pool entries to prevent resource leakage.
+    pub fn evict_idle(&self) {
+        Self::evict_idle_internal(&self.pools, &self.config);
+    }
+
+    fn evict_idle_internal(
+        pools: &Arc<RwLock<AHashMap<BackendId, Arc<BackendPool>>>>,
+        config: &ConnectionPoolConfig,
+    ) {
+        let now = Instant::now();
+        let pools_snapshot: Vec<(BackendId, Arc<BackendPool>)> = {
+            let read = pools.read();
+            read.iter().map(|(&k, v)| (k, v.clone())).collect()
+        };
+
+        let mut empty_pools = Vec::new();
+
+        for (id, pool) in pools_snapshot {
+            let mut retained = Vec::new();
+            while let Some(conn) = pool.idle.pop() {
+                let idle_dur = now.duration_since(conn.last_used);
+                let life_dur = now.duration_since(conn.created_at);
+                if idle_dur <= config.idle_timeout
+                    && life_dur <= config.max_lifetime
+                    && Self::is_alive(&conn.stream)
+                {
+                    retained.push(conn);
+                }
+            }
+
+            let is_empty = retained.is_empty() && pool.active_count.load(Ordering::Relaxed) == 0;
+            for conn in retained {
+                let _ = pool.idle.push(conn);
+            }
+
+            if is_empty {
+                empty_pools.push(id);
+            }
+        }
+
+        if !empty_pools.is_empty() {
+            let mut write = pools.write();
+            for id in empty_pools {
+                if let Some(pool) = write.get(&id) {
+                    if pool.idle.is_empty() && pool.active_count.load(Ordering::Relaxed) == 0 {
+                        write.remove(&id);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_connection_pool_evict_idle() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Background accept task
+        tokio::spawn(async move { while let Ok((_, _)) = listener.accept().await {} });
+
+        let config = ConnectionPoolConfig {
+            idle_timeout: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let pool = ConnectionPool::new(config);
+
+        let id = BackendId::new(101);
+        let stream = pool.get_or_connect(id, addr).await.unwrap();
+        pool.return_connection(id, stream);
+
+        assert_eq!(pool.pools.read().len(), 1);
+
+        // Sleep until idle timeout expires
+        tokio::time::sleep(Duration::from_millis(70)).await;
+
+        pool.evict_idle();
+
+        // Expired connection drained and empty pool pruned
+        assert_eq!(pool.pools.read().len(), 0);
     }
 }

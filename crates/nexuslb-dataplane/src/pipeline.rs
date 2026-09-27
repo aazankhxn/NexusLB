@@ -32,7 +32,7 @@ impl DataplanePipeline {
         // 1. Rate limiting check
         if !current_state.rate_limiter.check(Some(client_addr.ip())) {
             metrics.inc_dropped_connections();
-            let _ = client.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1\r\nContent-Length: 21\r\n\r\nRate limit exceeded\n").await;
+            let _ = client.write_all(b"HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nRetry-After: 1\r\nConnection: close\r\nContent-Length: 57\r\n\r\n{\"error\":\"Too Many Requests\",\"message\":\"Rate limit exceeded\"}\n").await;
             return;
         }
 
@@ -69,10 +69,14 @@ impl DataplanePipeline {
                 .await;
             }
             DetectedProtocol::Http2 => {
-                Self::handle_http2(client, client_addr, &current_state, metrics).await;
+                let prefixed =
+                    nexuslb_network::PrefixedStream::new(read_buf[..read_n].to_vec(), client);
+                Self::handle_http2(prefixed, client_addr, &current_state, metrics).await;
             }
             DetectedProtocol::RawTcp => {
-                Self::handle_tcp(client, client_addr, &current_state, metrics).await;
+                let prefixed =
+                    nexuslb_network::PrefixedStream::new(read_buf[..read_n].to_vec(), client);
+                Self::handle_tcp(prefixed, client_addr, &current_state, metrics).await;
             }
             DetectedProtocol::Tls => {
                 // If TLS acceptor configured, terminate TLS; otherwise passthrough
@@ -98,8 +102,12 @@ impl DataplanePipeline {
                                     if let Some(pool) = pool {
                                         let ctx = SelectionContext::with_ip(client_addr.ip());
                                         if let Some(b) = pool.select(&ctx) {
-                                            let _ = H2Proxy::handle_connection(
+                                            let prefixed_tls = nexuslb_network::PrefixedStream::new(
+                                                inner_buf[..inner_n].to_vec(),
                                                 tls_stream,
+                                            );
+                                            let _ = H2Proxy::handle_connection(
+                                                prefixed_tls,
                                                 client_addr,
                                                 b,
                                                 metrics,
@@ -128,8 +136,10 @@ impl DataplanePipeline {
                         }
                     }
                 } else {
-                    // TLS passthrough over TCP
-                    Self::handle_tcp(client, client_addr, &current_state, metrics).await;
+                    // TLS passthrough over TCP: preserve ClientHello bytes
+                    let prefixed =
+                        nexuslb_network::PrefixedStream::new(read_buf[..read_n].to_vec(), client);
+                    Self::handle_tcp(prefixed, client_addr, &current_state, metrics).await;
                 }
             }
         }
@@ -183,10 +193,31 @@ impl DataplanePipeline {
     ) where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        // Quick route match: check default pool or route by path/host
+        // Parse request line / Host header from initial read to evaluate routing rules
+        let mut headers = [httparse::EMPTY_HEADER; 32];
+        let mut req = httparse::Request::new(&mut headers);
+        let (method, path, host) = if let Ok(httparse::Status::Complete(_))
+        | Ok(httparse::Status::Partial) =
+            req.parse(&read_buf[..initial_read])
+        {
+            let m = req.method;
+            let p = req.path.unwrap_or("/");
+            let h = req
+                .headers
+                .iter()
+                .find(|hdr| hdr.name.eq_ignore_ascii_case("host"))
+                .and_then(|hdr| std::str::from_utf8(hdr.value).ok());
+            (m, p, h)
+        } else {
+            (None, "/", None)
+        };
+
+        // Match against routing table: first check configured routes, then default pool
         let pool = state
             .router
-            .default_pool()
+            .route(host, path, method, None, None)
+            .map(|(_route, pool)| pool)
+            .or_else(|| state.router.default_pool())
             .or_else(|| state.router.pools().values().next());
 
         let pool = match pool {
@@ -204,7 +235,7 @@ impl DataplanePipeline {
                 metrics.inc_backend_errors();
                 warn!(pool = %pool.name, "No healthy backend available in pool");
                 let _ = client
-                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 23\r\n\r\nNo backends available\n")
+                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 63\r\n\r\n{\"error\":\"Service Unavailable\",\"message\":\"No backends available\"}\n")
                     .await;
                 return;
             }
@@ -232,12 +263,14 @@ impl DataplanePipeline {
         let _ = client.shutdown().await;
     }
 
-    async fn handle_http2(
-        client: TcpStream,
+    async fn handle_http2<S>(
+        client: S,
         client_addr: SocketAddr,
         state: &crate::state::DataplaneState,
         metrics: Arc<WorkerMetrics>,
-    ) {
+    ) where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         let pool = state
             .router
             .default_pool()
@@ -265,12 +298,14 @@ impl DataplanePipeline {
             nexuslb_proxy::H2Proxy::handle_connection(client, client_addr, backend, metrics).await;
     }
 
-    async fn handle_tcp(
-        client: TcpStream,
+    async fn handle_tcp<S>(
+        client: S,
         client_addr: SocketAddr,
         state: &crate::state::DataplaneState,
         metrics: Arc<WorkerMetrics>,
-    ) {
+    ) where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
         let pool = state
             .router
             .default_pool()

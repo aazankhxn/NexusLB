@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod matcher;
 pub mod pool;
 pub mod route;

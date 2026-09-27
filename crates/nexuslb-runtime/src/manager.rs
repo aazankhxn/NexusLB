@@ -2,8 +2,9 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use tokio::sync::watch;
-use tracing::info;
+use std::time::Duration;
+use tokio::sync::{watch, Semaphore};
+use tracing::{info, warn};
 
 use nexuslb_dataplane::{DataplanePipeline, SharedDataplaneState};
 use nexuslb_metrics::GlobalMetrics;
@@ -15,6 +16,7 @@ pub struct RuntimeManager {
     state: Arc<SharedDataplaneState>,
     metrics: Arc<GlobalMetrics>,
     socket_config: SocketConfig,
+    max_connections: usize,
     shutdown_tx: watch::Sender<bool>,
     handles: Vec<JoinHandle<()>>,
 }
@@ -26,6 +28,7 @@ impl RuntimeManager {
         state: Arc<SharedDataplaneState>,
         metrics: Arc<GlobalMetrics>,
         socket_config: SocketConfig,
+        max_connections: usize,
     ) -> Self {
         let num_workers = match workers_spec.trim().to_ascii_lowercase().as_str() {
             "auto" => thread::available_parallelism()
@@ -46,6 +49,7 @@ impl RuntimeManager {
             state,
             metrics,
             socket_config,
+            max_connections,
             shutdown_tx,
             handles: Vec::new(),
         }
@@ -54,6 +58,7 @@ impl RuntimeManager {
     pub fn start(&mut self) {
         info!(
             workers = self.num_workers,
+            max_connections = self.max_connections,
             listeners = ?self.listen_addrs,
             "Starting NexusLB high-throughput work-stealing runtime"
         );
@@ -64,6 +69,7 @@ impl RuntimeManager {
         let socket_config = self.socket_config;
         let shutdown_rx = self.shutdown_tx.subscribe();
         let num_workers = self.num_workers;
+        let max_connections = self.max_connections;
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // Already inside a Tokio runtime: spawn listener tasks directly onto it!
@@ -75,6 +81,7 @@ impl RuntimeManager {
                     state,
                     metrics,
                     num_workers,
+                    max_connections,
                 )
                 .await;
             });
@@ -98,6 +105,7 @@ impl RuntimeManager {
                         state,
                         metrics,
                         num_workers,
+                        max_connections,
                     )
                     .await;
                 });
@@ -114,6 +122,7 @@ impl RuntimeManager {
         state: Arc<SharedDataplaneState>,
         metrics: Arc<GlobalMetrics>,
         num_workers: usize,
+        max_connections: usize,
     ) {
         let mut listeners = Vec::new();
         for addr in &listen_addrs {
@@ -136,6 +145,9 @@ impl RuntimeManager {
         // Shared shutdown flag — checked with Relaxed load instead of tokio::select! overhead
         let shutdown_flag = Arc::new(AtomicBool::new(false));
 
+        // Global connection limit semaphore — prevents fd exhaustion under SYN flood / DDoS
+        let conn_semaphore = Arc::new(Semaphore::new(max_connections));
+
         let mut accept_tasks = Vec::new();
 
         // Spawn shutdown watcher task
@@ -155,6 +167,7 @@ impl RuntimeManager {
             let worker_idx = idx % num_workers;
             let m_worker = metrics.worker(worker_idx);
             let flag = shutdown_flag.clone();
+            let sem = conn_semaphore.clone();
 
             accept_tasks.push(tokio::spawn(async move {
                 loop {
@@ -166,11 +179,22 @@ impl RuntimeManager {
 
                     match listener.accept().await {
                         Ok((stream, client_addr)) => {
+                            // Enforce global connection limit
+                            let permit = match sem.clone().try_acquire_owned() {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    warn!(client = %client_addr, "Global connection limit reached, dropping connection");
+                                    drop(stream);
+                                    continue;
+                                }
+                            };
+
                             let _ = stream.set_nodelay(true);
                             let s_clone = s.clone();
                             let m_clone = m_worker.clone();
 
                             tokio::spawn(async move {
+                                let _permit = permit; // RAII: released when connection task ends
                                 DataplanePipeline::process_connection(
                                     stream,
                                     client_addr,
@@ -190,6 +214,20 @@ impl RuntimeManager {
 
         for task in accept_tasks {
             let _ = task.await;
+        }
+
+        info!("Accept loops terminated; draining active connections (up to 15s)");
+        let drain_timeout = Duration::from_secs(15);
+        let drain_fut = conn_semaphore
+            .clone()
+            .acquire_many_owned(max_connections as u32);
+        match tokio::time::timeout(drain_timeout, drain_fut).await {
+            Ok(Ok(_all_permits)) => {
+                info!("All in-flight connections drained cleanly");
+            }
+            _ => {
+                warn!("Graceful shutdown drain timeout reached; force-stopping runtime");
+            }
         }
     }
 

@@ -42,8 +42,12 @@ fn test_circuit_breaker_trip_and_recovery() {
     // 3 consecutive failures: tripped!
     assert_eq!(backend.circuit_state(), CircuitState::Open);
 
-    // Check cool down transition to HalfOpen
+    // Immediate check must NOT transition to HalfOpen before cool-down
     let created = Instant::now();
+    cb.maybe_half_open(&backend, Instant::now(), created);
+    assert_eq!(backend.circuit_state(), CircuitState::Open);
+
+    // Check cool down transition to HalfOpen after sleep
     std::thread::sleep(Duration::from_millis(60));
     cb.maybe_half_open(&backend, Instant::now(), created);
     assert_eq!(backend.circuit_state(), CircuitState::HalfOpen);

@@ -259,7 +259,8 @@ fn test_adaptive_scheduler_large_pool_sampled_p2c() {
             for _ in 0..50 {
                 b.stats().inc_active_connections();
             }
-            b.stats().record_success(Duration::from_millis(200), 100, 100);
+            b.stats()
+                .record_success(Duration::from_millis(200), 100, 100);
             b.stats().record_error();
         } else {
             b.stats().record_success(Duration::from_millis(5), 100, 100);
@@ -272,8 +273,9 @@ fn test_adaptive_scheduler_large_pool_sampled_p2c() {
 
     // Perform 50 selections and ensure all return valid healthy backends without panicking
     for _ in 0..50 {
-        let selected = adaptive.select(&backends, &ctx).expect("Must select a backend");
+        let selected = adaptive
+            .select(&backends, &ctx)
+            .expect("Must select a backend");
         assert!(selected.is_available());
     }
 }
-

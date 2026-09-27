@@ -19,17 +19,17 @@ export function Hero() {
   const snippets: Record<"start" | "top" | "build", SnippetLine[]> = {
     start: [
       { prompt: true, text: "./target/release/nexuslb start --config nexuslb.yaml" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Starting NexusLB v0.0.3", color: "#86868b" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: I/O Engine: tokio [4 workers assigned]", color: "#86868b" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb_network: Listening on 0.0.0.0:8080 (SO_REUSEPORT, TCP_NODELAY)", color: "#30d158" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb_api: Admin REST API listening on 127.0.0.1:9091", color: "#30d158" },
-      { text: "2026-09-26T14:10:00Z  INFO nexuslb: Ready for production traffic. Press Ctrl+C to terminate.", color: "#2997ff" },
+      { text: "2026-09-27T12:00:00Z  INFO nexuslb: Starting NexusLB v0.0.4", color: "#86868b" },
+      { text: "2026-09-27T12:00:00Z  INFO nexuslb: I/O Engine: tokio [4 workers assigned]", color: "#86868b" },
+      { text: "2026-09-27T12:00:00Z  INFO nexuslb_network: Listening on 0.0.0.0:8080 (SO_REUSEPORT, TCP_NODELAY)", color: "#30d158" },
+      { text: "2026-09-27T12:00:00Z  INFO nexuslb_api: Admin REST API listening on 127.0.0.1:9091", color: "#30d158" },
+      { text: "2026-09-27T12:00:00Z  INFO nexuslb: Ready for production traffic. Press Ctrl+C to terminate.", color: "#2997ff" },
     ],
     top: [
       { prompt: true, text: "./target/release/nexuslb top" },
-      { text: "[NexusLB Operator Dashboard v0.0.3] ──────────────── Up: 14d 02h 19m", color: "#2997ff", bold: true },
-      { text: "Throughput: 118,872.4 req/s   Conns: 100 active   Drop Rate: 0.00%", color: "#30d158" },
-      { text: "Latency:    P50: 525 µs   P90: 1.10 ms   P99: 1.37 ms", color: "#f5f5f7" },
+      { text: "[NexusLB Operator Dashboard v0.0.4] ──────────────── Up: 21d 08h 44m", color: "#2997ff", bold: true },
+      { text: "Throughput: 114,373.7 req/s   Conns: 100 active   Drop Rate: 0.00%", color: "#30d158" },
+      { text: "Latency:    P50: 500 µs   P90: 850 µs   P99: 1.00 ms", color: "#f5f5f7" },
       { text: "\nActive Pool: [api-cluster] (Algorithm: Adaptive)", color: "#86868b" },
       { text: "  ● srv-1 [10.0.1.10:8080]  UP  Load: 24%  Conns: 58   Lat: 480µs  Score: 1.12", color: "#30d158" },
       { text: "  ● srv-2 [10.0.1.11:8080]  UP  Load: 26%  Conns: 64   Lat: 510µs  Score: 1.18", color: "#30d158" },
@@ -38,11 +38,11 @@ export function Hero() {
     ],
     build: [
       { prompt: true, text: "cargo build --release" },
-      { text: "   Compiling nexuslb v0.0.3 (/Users/aazankhan/Personal/NexusLB)", color: "#86868b" },
+      { text: "   Compiling nexuslb v0.0.4 (/Users/aazankhan/Personal/NexusLB)", color: "#86868b" },
       { text: "   LTO optimization: fat, codegen-units: 1, panic: abort", color: "#86868b" },
       { text: "    Finished release [optimized] target(s) in 32.77s", color: "#30d158", bold: true },
       { prompt: true, text: "./target/release/nexuslb version" },
-      { text: "NexusLB v0.0.3 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#2997ff" },
+      { text: "NexusLB v0.0.4 [Target: macos aarch64 | Engines: tokio, io-uring, xdp]", color: "#2997ff" },
     ],
   };
 
@@ -211,10 +211,10 @@ export function Hero() {
               <Zap size={18} color="var(--text-tint)" />
             </div>
             <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-              118,872
+              114,373
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
-              Requests/sec (+10.7% vs NGINX Plus at C=100)
+              Requests/sec sustained (+6.5% vs NGINX Plus at C=100)
             </div>
           </div>
 
@@ -226,10 +226,10 @@ export function Hero() {
               <Flame size={18} color="#30d158" />
             </div>
             <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-              525 µs
+              500 µs
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
-              20.2% lower latency than NGINX Plus
+              24.0% lower latency than NGINX Plus
             </div>
           </div>
 
@@ -241,10 +241,10 @@ export function Hero() {
               <Layers size={18} color="#af52de" />
             </div>
             <div style={{ fontSize: "clamp(32px, 4vw, 40px)", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-              2.6 MB
+              11.0 MB
             </div>
             <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "8px" }}>
-              -88.6% leaner than NGINX (8 workers)
+              Flatline RSS — 51.5% leaner than NGINX Plus
             </div>
           </div>
 

@@ -98,8 +98,14 @@ async fn test_hot_reload_admin_api() {
     let admin_addr = listener.local_addr().unwrap();
     drop(listener);
 
-    let admin = AdminServer::new(admin_addr, Some("test-admin-secret".to_string()), metrics, shared_state.clone(), config)
-        .with_reloader(reloader);
+    let admin = AdminServer::new(
+        admin_addr,
+        Some("test-admin-secret".to_string()),
+        metrics,
+        shared_state.clone(),
+        config,
+    )
+    .with_reloader(reloader);
 
     tokio::spawn(async move {
         let _ = admin.run().await;
